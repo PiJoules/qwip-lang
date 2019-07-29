@@ -1,0 +1,46 @@
+#ifndef COMPILER_H
+#define COMPILER_H
+
+#include "Parser.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
+
+namespace qwip {
+
+class Compiler {
+ public:
+  Compiler(const Diagnostic &diag) : diag_(diag) {}
+
+  bool CompileModule(const Module &module);
+  const llvm::Module &getLLVMModule() const {
+    CHECK_PTR(llvm_module_);
+    return *llvm_module_;
+  }
+  bool SaveToExecutable(const std::string &output_file);
+
+ private:
+  bool CompileExternDecl(const ExternDecl &decl);
+  bool CompileFuncDef(const FuncDef &funcdef);
+  bool CompileFuncDecl(const FuncDecl &funcdecl, llvm::Function *&result);
+  bool CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder);
+#define STMT(Kind, Class) \
+  bool Compile##Class(const Class &stmt, llvm::IRBuilder<> &builder);
+#include "Nodes.def"
+
+  // TODO: Add the dispatch for expressions similar to stmts.
+  bool CompileExpr(const Expr &expr, llvm::Value *&result);
+  bool CompileInt(const Int &expr, llvm::Value *&result);
+
+  llvm::Type *toLLVMType(const Type &type);
+#define TYPE(Kind, Class) llvm::Type *Class##ToLLVMType(const Class &type);
+#include "Types.def"
+
+  const Diagnostic diag_;
+  llvm::LLVMContext llvm_context_;
+  std::unique_ptr<llvm::Module> llvm_module_;
+};
+
+}  // namespace qwip
+
+#endif

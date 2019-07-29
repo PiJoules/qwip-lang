@@ -1,0 +1,38 @@
+#ifndef TOKEN
+#define TOKEN(Kind)
+#endif
+
+// Tokens that are only 1 character long.
+#ifndef TOKEN_1CHAR
+#define TOKEN_1CHAR(Kind, Char) TOKEN(Kind)
+#endif
+
+// Tokens that are keywords.
+#ifndef KEYWORD
+#define KEYWORD(Kind, Chars) TOKEN(Kind)
+#endif
+
+TOKEN(TOK_ID)			// [A-Za-z_][A-Za-z0-9_]+
+TOKEN(TOK_RARROW)		// ->
+TOKEN(TOK_INT)			// 123
+TOKEN(TOK_COMMENT)		// //
+
+KEYWORD(TOK_RET, 	"ret")			// ret
+
+TOKEN_1CHAR(TOK_LPAR, 		'(')		// (
+TOKEN_1CHAR(TOK_RPAR, 		')')		// )
+TOKEN_1CHAR(TOK_COL,		':')		// :
+TOKEN_1CHAR(TOK_COMMA,		',')		// ,
+TOKEN_1CHAR(TOK_PTR,		'*')		// *
+TOKEN_1CHAR(TOK_SEMICOL,	';')		// ;
+TOKEN_1CHAR(TOK_LBRACE, 	'{')		// {
+TOKEN_1CHAR(TOK_RBRACE, 	'}')		// }
+
+// Note that this could conflict with -> when lexing.
+TOKEN_1CHAR(TOK_SUB, 		'-')		// -
+
+TOKEN(TOK_EOF)
+
+#undef KEYWORD
+#undef TOKEN_1CHAR
+#undef TOKEN

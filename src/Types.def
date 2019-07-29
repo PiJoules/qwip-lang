@@ -1,0 +1,9 @@
+#ifndef TYPE
+#define TYPE(Kind, Class)
+#endif
+
+TYPE(TYPE_FUNC, FuncType)
+TYPE(TYPE_PTR, PtrType)
+TYPE(TYPE_ID, IDType)
+
+#undef TYPE
