@@ -14,6 +14,9 @@
     assert(__result && Msg); \
   }
 
+#define UNREACHABLE(Msg) \
+  CHECK(false, Msg);
+
 #define __stringify(s) #s
 #define STR(s) __stringify(s)
 

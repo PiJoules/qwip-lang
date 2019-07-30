@@ -88,6 +88,8 @@ bool Lexer::Lex(Token &result) {
   // Handle single char tokens.
   if (LexSingleCharToken(next_char, result)) return true;
 
+  if (next_char == '"') return LexString(result);
+
   if (isdigit(next_char)) return LexInt(result);
 
   // Proceed to handle keywords.
@@ -111,6 +113,40 @@ bool Lexer::LexSingleCharToken(char lookahead, Token &result) {
         "The lookahead passed to this should have been the next character off "
         "the stream.");
   result.chars = lookahead;
+  return true;
+}
+
+bool Lexer::LexString(Token &result) {
+  char c = getNextChar();
+  CHECK(
+      c == '"',
+      "Expected a double quote as the first character off the input_ stream.");
+
+  char next_char = input_.peek();
+  result.chars.clear();
+  while (next_char != '"') {
+    if (next_char == '\\') {
+      getNextChar();
+      next_char = getNextChar();
+      switch (next_char) {
+        case 'n':
+          result.chars.push_back('\n');
+          break;
+        case 't':
+          result.chars.push_back('\t');
+          break;
+        default:
+          result.chars.push_back(next_char);
+      }
+    } else {
+      result.chars.push_back(getNextChar());
+    }
+    next_char = input_.peek();
+  }
+
+  // next_char is "
+  CHECK(getNextChar() == '"', "Expected the next char to be the ending \".");
+  result.kind = TOK_STR;
   return true;
 }
 

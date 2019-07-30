@@ -1,8 +1,11 @@
 #include "Compiler.h"
 
+#include <functional>
 #include <iostream>
+#include <unordered_map>
 
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -12,6 +15,40 @@
 namespace qwip {
 
 namespace {
+
+llvm::Function *getPrintFunction(llvm::Module &module) {
+  if (llvm::GlobalValue *printf_func = module.getNamedValue("print"))
+    return llvm::cast<llvm::Function>(printf_func);
+
+  llvm::LLVMContext &context = module.getContext();
+  auto *printf_type = llvm::FunctionType::get(
+      llvm::Type::getInt32Ty(context), {llvm::Type::getInt8PtrTy(context)},
+      /*isVarArg=*/true);
+  llvm::Function *printf_func = llvm::Function::Create(
+      printf_type, llvm::GlobalValue::ExternalLinkage, "printf", &module);
+
+  auto *print_type = llvm::FunctionType::get(
+      llvm::Type::getVoidTy(context), {llvm::Type::getInt8PtrTy(context)},
+      /*isVarArg=*/false);
+  llvm::Function *print_func = llvm::Function::Create(
+      print_type, llvm::GlobalValue::ExternalLinkage, "print", &module);
+
+  // Create the body.
+  llvm::BasicBlock *entry =
+      llvm::BasicBlock::Create(context, "entry", print_func);
+  llvm::IRBuilder<> builder(entry);
+  llvm::Value *first_arg = print_func->arg_begin();
+  llvm::CallInst *tailcall = builder.CreateCall(printf_func, {first_arg});
+  tailcall->setTailCall();
+  builder.CreateRetVoid();
+
+  return print_func;
+}
+
+typedef llvm::Function *(*FunctionMaker)(llvm::Module &);
+const std::unordered_map<std::string, FunctionMaker> kBuiltinFunctions = {
+    {"print", getPrintFunction},
+};
 
 bool FindExe(const std::string &exe_name, std::string &linker_path) {
   auto result = llvm::sys::findProgramByName(exe_name);
@@ -83,7 +120,6 @@ bool Compiler::CompileFuncDecl(const FuncDecl &funcdecl,
                              funcdecl.getName(), llvm_module_.get());
 
   // Assign the argument names.
-
   const auto &params = func_type_node.getParams();
   unsigned Idx = 0;
   for (auto &arg : result->args()) {
@@ -122,23 +158,91 @@ bool Compiler::CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder) {
   }
 }
 
-bool Compiler::CompileExpr(const Expr &expr, llvm::Value *&result) {
-  if (expr.getKind() == NODE_INT) return CompileInt(expr.getAs<Int>(), result);
-  std::cerr << "Can only compile ints for now\n";
-  return false;
+bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
+                           llvm::Value *&result) {
+  switch (expr.getKind()) {
+#define NODE(Kind, Class)
+#define EXPR(Kind, Class) \
+  case Kind:              \
+    return Compile##Class(expr.getAs<Class>(), builder, result);
+#include "Nodes.def"
+
+#define EXPR(Kind, Class)
+#define NODE(Kind, Class) case Kind:
+#include "Nodes.def"
+    UNREACHABLE("Unknown expression kind.");
+    return false;
+  }
 }
 
-bool Compiler::CompileInt(const Int &expr, llvm::Value *&result) {
+bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
+                          llvm::Value *&result) {
   result = llvm::ConstantInt::get(llvm_context_,
                                   llvm::APInt(/*num_bits=*/64, expr.getVal(),
                                               /*isSigned=*/true));
   return true;
 }
 
+bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
+                         llvm::Value *&result) {
+  auto found_builtin = kBuiltinFunctions.find(expr.getName());
+  if (found_builtin != kBuiltinFunctions.end()) {
+    FunctionMaker func_maker = found_builtin->second;
+    result = func_maker(getLLVMModule());
+    return true;
+  }
+
+  if (llvm::GlobalValue *val = getLLVMModule().getNamedValue(expr.getName()))
+    return val;
+
+  llvm::Function *func = builder.GetInsertBlock()->getParent();
+  const auto *local_symbols = func->getValueSymbolTable();
+  result = local_symbols->lookup(expr.getName());
+  if (!result)
+    std::cerr << "Unable to find symbol for '" << expr.getName() << "'\n";
+  return result;
+}
+
+bool Compiler::CompileStr(const Str &expr, llvm::IRBuilder<> &builder,
+                          llvm::Value *&result) {
+  llvm::Constant *str =
+      llvm::ConstantDataArray::getString(llvm_context_, expr.getVal(),
+                                         /*AddNull=*/true);
+  auto *global_str = new llvm::GlobalVariable(
+      getLLVMModule(), str->getType(), /*isConstant=*/true,
+      llvm::GlobalValue::PrivateLinkage, str);
+  global_str->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+  result = global_str;
+  return true;
+}
+
+bool Compiler::CompileCall(const Call &expr, llvm::IRBuilder<> &builder,
+                           llvm::Value *&result) {
+  llvm::Value *caller;
+  if (!CompileExpr(expr.getCaller(), builder, caller)) return false;
+
+  std::vector<llvm::Value *> args;
+  for (const auto &arg_ptr : expr.getArgs()) {
+    llvm::Value *llvm_arg;
+    if (!CompileExpr(*arg_ptr, builder, llvm_arg)) return false;
+    args.push_back(llvm_arg);
+  }
+
+  builder.CreateCall(caller, args);
+  return true;
+}
+
 bool Compiler::CompileReturn(const Return &stmt, llvm::IRBuilder<> &builder) {
   llvm::Value *ret_val;
-  if (!CompileExpr(stmt.getExpr(), ret_val)) return false;
+  if (!CompileExpr(stmt.getExpr(), builder, ret_val)) return false;
   builder.CreateRet(ret_val);
+  return true;
+}
+
+bool Compiler::CompileCallStmt(const CallStmt &stmt,
+                               llvm::IRBuilder<> &builder) {
+  llvm::Value *ret_val;
+  if (!CompileCall(stmt.getCall(), builder, ret_val)) return false;
   return true;
 }
 

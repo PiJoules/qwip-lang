@@ -15,6 +15,7 @@
 TOKEN(TOK_ID)			// [A-Za-z_][A-Za-z0-9_]+
 TOKEN(TOK_RARROW)		// ->
 TOKEN(TOK_INT)			// 123
+TOKEN(TOK_STR)			// "abc"
 TOKEN(TOK_COMMENT)		// //
 
 KEYWORD(TOK_RET, 	"ret")			// ret

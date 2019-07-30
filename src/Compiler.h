@@ -13,7 +13,7 @@ class Compiler {
   Compiler(const Diagnostic &diag) : diag_(diag) {}
 
   bool CompileModule(const Module &module);
-  const llvm::Module &getLLVMModule() const {
+  llvm::Module &getLLVMModule() const {
     CHECK_PTR(llvm_module_);
     return *llvm_module_;
   }
@@ -29,8 +29,12 @@ class Compiler {
 #include "Nodes.def"
 
   // TODO: Add the dispatch for expressions similar to stmts.
-  bool CompileExpr(const Expr &expr, llvm::Value *&result);
-  bool CompileInt(const Int &expr, llvm::Value *&result);
+  bool CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
+                   llvm::Value *&result);
+#define EXPR(Kind, Class)                                            \
+  bool Compile##Class(const Class &expr, llvm::IRBuilder<> &builder, \
+                      llvm::Value *&result);
+#include "Nodes.def"
 
   llvm::Type *toLLVMType(const Type &type);
 #define TYPE(Kind, Class) llvm::Type *Class##ToLLVMType(const Class &type);

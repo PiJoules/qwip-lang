@@ -115,6 +115,28 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     if (!ParseReturn(stmt)) return false;
     result = std::move(stmt);
     return true;
+  } else if (lookahead.kind == TOK_ID) {
+    // Parse an expression statement.
+    std::unique_ptr<Expr> expr;
+    if (!ParseExpr(expr)) return false;
+    if (expr->getKind() != NODE_CALL) {
+      diag_.Err(expr->getLoc())
+          << "Expressions that form statements can only be call expressions.";
+      return false;
+    }
+    std::unique_ptr<Call> call(static_cast<Call *>(expr.release()));
+    result = std::make_unique<CallStmt>(call);
+
+    // ;
+    Token tok;
+    TRY_LEX(lexer_, tok);
+    if (tok.kind != TOK_SEMICOL) {
+      diag_.Err(tok.loc)
+          << "Expected a ';' to denote the end of a return statement.";
+      return false;
+    }
+
+    return true;
   }
 
   diag_.Err(lookahead.loc)
@@ -257,9 +279,51 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
 }
 
 bool Parser::ParseExpr(std::unique_ptr<Expr> &result) {
-  std::unique_ptr<Expr> expr;
-  if (!ParseSingleExpr(expr)) return false;
-  result = std::move(expr);
+  if (!ParseSingleExpr(result)) return false;
+
+  Token tok;
+  TRY_PEEK(lexer_, tok);
+  if (tok.kind == TOK_LPAR) {
+    // Parse the start of a call expression.
+    TRY_LEX(lexer_, tok);
+
+    // Parse arguments.
+    std::vector<std::unique_ptr<Expr>> args;
+
+    Token lookahead;
+    TRY_PEEK(lexer_, lookahead);
+    if (lookahead.kind != TOK_RPAR) {
+      // Arguments.
+      while (1) {
+        // Consume and read expressions.
+        std::unique_ptr<Expr> arg;
+        if (!ParseExpr(arg)) return false;
+        args.push_back(std::move(arg));
+
+        TRY_PEEK(lexer_, lookahead);
+        if (lookahead.kind != TOK_RPAR) {
+          TRY_LEX(lexer_, tok);
+          if (tok.kind != TOK_COMMA) {
+            diag_.Err(tok.loc) << "Expected a ',' to separate arguments "
+                                  "or a closing parenthesis when parsing the "
+                                  "arguments of a function call.";
+            return false;
+          }
+        } else {
+          break;
+        }
+      }
+    }
+
+    // )
+    TRY_LEX(lexer_, tok);
+    CHECK(
+        tok.kind == TOK_RPAR,
+        "We should have only broken out of the previous loop if we ran into a "
+        "closing parenthesis.");
+
+    result = std::make_unique<Call>(result, args);
+  }
   return true;
 }
 
@@ -272,6 +336,11 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       TRY_LEX(lexer_, tok);
       int val = std::stoi(tok.chars);
       result = std::make_unique<Int>(tok.loc, val);
+      return true;
+    }
+    case TOK_STR: {
+      TRY_LEX(lexer_, tok);
+      result = std::make_unique<Str>(tok.loc, tok.chars);
       return true;
     }
     case TOK_ID: {

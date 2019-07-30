@@ -131,6 +131,34 @@ class Expr : public Node {
   Expr(const SourceLocation loc) : Node(loc) {}
 };
 
+class Call : public Expr {
+ public:
+  Call(std::unique_ptr<Expr> &caller, std::vector<std::unique_ptr<Expr>> &args)
+      : Expr(caller->getLoc()),
+        caller_(std::move(caller)),
+        args_(std::move(args)) {}
+
+  NodeKind getKind() const override { return NODE_CALL; }
+  const Expr &getCaller() const { return *caller_; }
+  const std::vector<std::unique_ptr<Expr>> &getArgs() const { return args_; }
+
+ private:
+  std::unique_ptr<Expr> caller_;
+  std::vector<std::unique_ptr<Expr>> args_;
+};
+
+class Str : public Expr {
+ public:
+  Str(const SourceLocation loc, const std::string &str)
+      : Expr(loc), val_(str) {}
+
+  NodeKind getKind() const override { return NODE_STR; }
+  const std::string &getVal() const { return val_; }
+
+ private:
+  std::string val_;
+};
+
 class Int : public Expr {
  public:
   Int(const SourceLocation loc, int i) : Expr(loc), val_(i) {}
@@ -266,6 +294,20 @@ class FuncDecl : public VarDecl {
 class Stmt : public Node {
  public:
   Stmt(const SourceLocation loc) : Node(loc) {}
+};
+
+class CallStmt : public Stmt {
+ public:
+  CallStmt(std::unique_ptr<Call> &call)
+      : Stmt(call->getLoc()), call_(std::move(call)) {
+    CHECK_PTR(call_);
+  }
+
+  NodeKind getKind() const override { return NODE_CALLSTMT; }
+  const Call &getCall() const { return *call_; }
+
+ private:
+  std::unique_ptr<Call> call_;
 };
 
 class FuncDef : public ExternDecl {

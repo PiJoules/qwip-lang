@@ -21,8 +21,12 @@ NODE(NODE_PTR_TYPE, PtrTypeNode)
 
 EXPR(NODE_ID, ID)
 EXPR(NODE_INT, Int)
+EXPR(NODE_STR, Str)
+EXPR(NODE_CALL, Call)
 
 STMT(NODE_RET, Return)
+STMT(NODE_CALLSTMT, CallStmt)
 
+#undef EXPR
 #undef STMT
 #undef NODE

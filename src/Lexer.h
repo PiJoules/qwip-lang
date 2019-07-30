@@ -48,6 +48,7 @@ class Lexer {
 
  private:
   bool LexInt(Token &result);
+  bool LexString(Token &result);
   bool LexSingleCharToken(char lookahead, Token &result);
   bool LexKeywordOrID(Token &result);
   bool LexKeyword(const std::string &word, Token &result);
