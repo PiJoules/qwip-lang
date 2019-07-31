@@ -10,23 +10,30 @@
 #define EXPR(Kind, Class) NODE(Kind, Class)
 #endif
 
+#ifndef ASSIGNABLE
+#define ASSIGNABLE(Kind, Class) EXPR(Kind, Class)
+#endif
+
 NODE(NODE_MODULE, Module)
-NODE(NODE_VARDECL, VarDecl)
 NODE(NODE_FUNCDEF, FuncDef)
 NODE(NODE_FUNCDECL, FuncDecl)
+NODE(NODE_PARAM, Param)
 
 NODE(NODE_ID_TYPE, IDTypeNode)
 NODE(NODE_FUNC_TYPE, FuncTypeNode)
 NODE(NODE_PTR_TYPE, PtrTypeNode)
 
-EXPR(NODE_ID, ID)
+ASSIGNABLE(NODE_ID, ID)
 EXPR(NODE_INT, Int)
 EXPR(NODE_STR, Str)
 EXPR(NODE_CALL, Call)
 
 STMT(NODE_RET, Return)
 STMT(NODE_CALLSTMT, CallStmt)
+STMT(NODE_VARDECL, VarDecl)
+STMT(NODE_ASSIGN, Assign)
 
+#undef ASSIGNABLE
 #undef EXPR
 #undef STMT
 #undef NODE

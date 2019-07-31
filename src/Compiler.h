@@ -40,6 +40,8 @@ class Compiler {
 #define TYPE(Kind, Class) llvm::Type *Class##ToLLVMType(const Class &type);
 #include "Types.def"
 
+  llvm::Value *getAddrOfVariable(const std::string &name, llvm::Function *func);
+
   const Diagnostic diag_;
   llvm::LLVMContext llvm_context_;
   std::unique_ptr<llvm::Module> llvm_module_;

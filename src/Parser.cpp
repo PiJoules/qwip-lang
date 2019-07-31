@@ -106,7 +106,7 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
 }
 
 bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
-  Token lookahead;
+  Token lookahead, tok;
   TRY_PEEK(lexer_, lookahead);
   SourceLocation stmtloc = lookahead.loc;
 
@@ -116,19 +116,46 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     result = std::move(stmt);
     return true;
   } else if (lookahead.kind == TOK_ID) {
-    // Parse an expression statement.
-    std::unique_ptr<Expr> expr;
-    if (!ParseExpr(expr)) return false;
-    if (expr->getKind() != NODE_CALL) {
-      diag_.Err(expr->getLoc())
-          << "Expressions that form statements can only be call expressions.";
-      return false;
+    // Parse an expression statement or a variable declaration.
+    Token id_tok;
+    TRY_LEX(lexer_, id_tok);
+
+    // If the next token is a :, then this is a variable declaration.
+    TRY_PEEK(lexer_, lookahead);
+    if (lookahead.kind == TOK_COL) {
+      std::unique_ptr<VarDecl> decl;
+      if (!ParseVarDeclAfterID(id_tok, decl)) return false;
+      result = std::move(decl);
+      return true;
     }
-    std::unique_ptr<Call> call(static_cast<Call *>(expr.release()));
-    result = std::make_unique<CallStmt>(call);
+
+    // Parse an expression.
+    std::unique_ptr<Expr> expr;
+    if (!ParseExprAfterID(id_tok, expr)) return false;
+
+    // If the next token is a =, then this is an assignment to an expression.
+    if (lookahead.kind == TOK_ASSIGN) {
+      TRY_LEX(lexer_, tok);
+      CHECK(tok.kind == TOK_ASSIGN,
+            "Expected the next token in the assignment to be =.");
+
+      std::unique_ptr<Expr> init;
+      if (!ParseExpr(init)) return false;
+
+      auto assign = std::make_unique<Assign>(expr, init);
+      result = std::move(assign);
+    } else {
+      // Otherwise it has to be a call stmt.
+      if (expr->getKind() != NODE_CALL) {
+        diag_.Err(expr->getLoc())
+            << "Expressions that form statements can only be call expressions.";
+        return false;
+      }
+      std::unique_ptr<Call> call(static_cast<Call *>(expr.release()));
+      result = std::make_unique<CallStmt>(call);
+    }
 
     // ;
-    Token tok;
     TRY_LEX(lexer_, tok);
     if (tok.kind != TOK_SEMICOL) {
       diag_.Err(tok.loc)
@@ -165,13 +192,33 @@ bool Parser::ParseReturn(std::unique_ptr<Return> &result) {
   return true;
 }
 
-bool Parser::ParseVarDecl(std::unique_ptr<VarDecl> &result) {
+bool Parser::ParseParam(std::unique_ptr<Param> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
   CHECK(tok.kind == TOK_ID, "Expected an ID");
   std::string name = tok.chars;
   SourceLocation loc = tok.loc;
 
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_COL) {
+    diag_.Err(loc) << "Expected a : after the ID in a parameter.";
+    return false;
+  }
+
+  std::unique_ptr<TypeNode> type;
+  if (!ParseTypeNode(type)) return false;
+
+  result = std::make_unique<Param>(loc, name, type);
+  return true;
+}
+
+bool Parser::ParseVarDeclAfterID(const Token &id_tok,
+                                 std::unique_ptr<VarDecl> &result) {
+  CHECK(id_tok.kind == TOK_ID, "Expected an ID");
+  std::string name = id_tok.chars;
+  SourceLocation loc = id_tok.loc;
+
+  Token tok;
   TRY_LEX(lexer_, tok);
   if (tok.kind != TOK_COL) {
     diag_.Err(loc) << "Expected a : after the ID in a variable declaration.";
@@ -181,7 +228,23 @@ bool Parser::ParseVarDecl(std::unique_ptr<VarDecl> &result) {
   std::unique_ptr<TypeNode> type;
   if (!ParseTypeNode(type)) return false;
 
-  result = std::make_unique<VarDecl>(loc, name, type);
+  // Check for an initial value.
+  std::unique_ptr<Expr> init;
+  TRY_PEEK(lexer_, tok);
+  if (tok.kind == TOK_ASSIGN) {
+    TRY_LEX(lexer_, tok);
+    if (!ParseExpr(init)) return false;
+  }
+
+  // ;
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_SEMICOL) {
+    diag_.Err(tok.loc)
+        << "Expected a ';' to denote the end of a return statement.";
+    return false;
+  }
+
+  result = std::make_unique<VarDecl>(loc, name, type, init);
   return true;
 }
 
@@ -223,7 +286,7 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
   SourceLocation loc = tok.loc;
 
   // Parse arguments.
-  std::vector<std::unique_ptr<VarDecl>> args;
+  std::vector<std::unique_ptr<Param>> params;
 
   Token lookahead;
   TRY_PEEK(lexer_, lookahead);
@@ -239,9 +302,9 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
         return false;
       }
 
-      std::unique_ptr<VarDecl> decl;
-      if (!ParseVarDecl(decl)) return false;
-      args.push_back(std::move(decl));
+      std::unique_ptr<Param> param;
+      if (!ParseParam(param)) return false;
+      params.push_back(std::move(param));
 
       TRY_PEEK(lexer_, lookahead);
       if (lookahead.kind != TOK_RPAR) {
@@ -274,13 +337,18 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
   std::unique_ptr<TypeNode> ret_type;
   if (!ParseTypeNode(ret_type)) return false;
 
-  result = std::make_unique<FuncTypeNode>(loc, ret_type, args);
+  result = std::make_unique<FuncTypeNode>(loc, ret_type, params);
   return true;
 }
 
-bool Parser::ParseExpr(std::unique_ptr<Expr> &result) {
-  if (!ParseSingleExpr(result)) return false;
+bool Parser::ParseExprAfterID(const Token &id_tok,
+                              std::unique_ptr<Expr> &result) {
+  CHECK(id_tok.kind == TOK_ID, "Expected the already lexed token to be an ID.");
+  if (!ParseSingleExprAfterID(id_tok, result)) return false;
+  return TryToMakeCallAfterExpr(result);
+}
 
+bool Parser::TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr) {
   Token tok;
   TRY_PEEK(lexer_, tok);
   if (tok.kind == TOK_LPAR) {
@@ -322,8 +390,25 @@ bool Parser::ParseExpr(std::unique_ptr<Expr> &result) {
         "We should have only broken out of the previous loop if we ran into a "
         "closing parenthesis.");
 
-    result = std::make_unique<Call>(result, args);
+    expr = std::make_unique<Call>(expr, args);
   }
+  return true;
+}
+
+bool Parser::ParseExpr(std::unique_ptr<Expr> &result) {
+  if (!ParseSingleExpr(result)) return false;
+  return TryToMakeCallAfterExpr(result);
+}
+
+bool Parser::ParseSingleExprAfterID(const Token &id_tok,
+                                    std::unique_ptr<Expr> &result) {
+  CHECK(id_tok.kind == TOK_ID, "Expected the already lexed token to be an ID.");
+
+  // Parse a caller for now.
+  SourceLocation exprloc = id_tok.loc;
+  std::string name = id_tok.chars;
+  std::unique_ptr<ID> caller(new ID(exprloc, name));
+  result = std::move(caller);
   return true;
 }
 
@@ -344,14 +429,8 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       return true;
     }
     case TOK_ID: {
-      // Parse a caller for now.
       TRY_LEX(lexer_, tok);
-      SourceLocation exprloc = tok.loc;
-
-      std::string name = tok.chars;
-      std::unique_ptr<ID> caller(new ID(exprloc, name));
-      result = std::move(caller);
-      return true;
+      return ParseSingleExprAfterID(tok, result);
     }
     default:
       diag_.Err(lookahead.loc) << "Expected an expression.";

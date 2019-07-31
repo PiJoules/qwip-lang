@@ -183,24 +183,40 @@ bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
-bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
-                         llvm::Value *&result) {
-  auto found_builtin = kBuiltinFunctions.find(expr.getName());
+llvm::Value *Compiler::getAddrOfVariable(const std::string &name,
+                                         llvm::Function *func) {
+  // Check locals first.
+  const auto *local_symbols = func->getValueSymbolTable();
+  llvm::Value *result = local_symbols->lookup(name);
+  if (result) return result;
+
+  // Then check globals.
+  auto found_builtin = kBuiltinFunctions.find(name);
   if (found_builtin != kBuiltinFunctions.end()) {
     FunctionMaker func_maker = found_builtin->second;
-    result = func_maker(getLLVMModule());
-    return true;
+    return func_maker(getLLVMModule());
+  }
+  if (llvm::GlobalValue *val = getLLVMModule().getNamedValue(name)) return val;
+
+  return nullptr;
+}
+
+bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
+                         llvm::Value *&result) {
+  llvm::Value *var_addr =
+      getAddrOfVariable(expr.getName(), builder.GetInsertBlock()->getParent());
+  if (!var_addr) {
+    std::cerr << "Unable to find symbol for '" << expr.getName() << "'\n";
+    return false;
   }
 
-  if (llvm::GlobalValue *val = getLLVMModule().getNamedValue(expr.getName()))
-    return val;
-
-  llvm::Function *func = builder.GetInsertBlock()->getParent();
-  const auto *local_symbols = func->getValueSymbolTable();
-  result = local_symbols->lookup(expr.getName());
-  if (!result)
-    std::cerr << "Unable to find symbol for '" << expr.getName() << "'\n";
-  return result;
+  const auto *ptr_type = llvm::cast<llvm::PointerType>(var_addr->getType());
+  if (ptr_type->getElementType()->isFunctionTy()) {
+    result = var_addr;
+  } else {
+    result = builder.CreateLoad(var_addr);
+  }
+  return true;
 }
 
 bool Compiler::CompileStr(const Str &expr, llvm::IRBuilder<> &builder,
@@ -243,6 +259,41 @@ bool Compiler::CompileCallStmt(const CallStmt &stmt,
                                llvm::IRBuilder<> &builder) {
   llvm::Value *ret_val;
   if (!CompileCall(stmt.getCall(), builder, ret_val)) return false;
+  return true;
+}
+
+bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
+  llvm::Value *value_addr;
+  switch (stmt.getLHS().getKind()) {
+    case NODE_ID: {
+      const auto &id_expr = stmt.getLHS().getAs<ID>();
+      value_addr = getAddrOfVariable(id_expr.getName(),
+                                     builder.GetInsertBlock()->getParent());
+      break;
+    }
+#define ASSIGNABLE(Kind, Class)
+#define NODE(Kind, Class) case Kind:
+#include "Nodes.def"
+      UNREACHABLE("Unhandled assignable kind.");
+      return false;
+  }
+  llvm::Value *init;
+  if (!CompileExpr(stmt.getExpr(), builder, init)) return false;
+  builder.CreateStore(init, value_addr, /*isVolatile=*/false);
+  return true;
+}
+
+bool Compiler::CompileVarDecl(const VarDecl &stmt, llvm::IRBuilder<> &builder) {
+  std::unique_ptr<Type> type = stmt.getType();
+  llvm::Type *llvm_type = toLLVMType(*type);
+  llvm::Value *value_addr =
+      builder.CreateAlloca(llvm_type, /*ArraySize=*/nullptr,
+                           /*Name=*/stmt.getName());
+  if (stmt.hasInit()) {
+    llvm::Value *init;
+    if (!CompileExpr(stmt.getInit(), builder, init)) return false;
+    builder.CreateStore(init, value_addr, /*isVolatile=*/false);
+  }
   return true;
 }
 

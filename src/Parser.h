@@ -226,23 +226,63 @@ class IDTypeNode : public TypeNode {
   std::string name_;
 };
 
-class VarDecl : public ExternDecl {
+class Stmt : public Node {
+ public:
+  Stmt(const SourceLocation loc) : Node(loc) {}
+};
+
+class VarDecl : public Stmt {
  public:
   VarDecl(const SourceLocation loc, const std::string &name,
           std::unique_ptr<TypeNode> &type)
-      : ExternDecl(loc, name), type_(std::move(type)) {
+      : Stmt(loc), name_(name), type_(std::move(type)) {
     CHECK_PTR(type_);
   }
   VarDecl(const SourceLocation loc, const std::string &name, TypeNode *type)
-      : ExternDecl(loc, name), type_(type) {
+      : Stmt(loc), name_(name), type_(type) {
+    CHECK_PTR(type_);
+  }
+  VarDecl(const SourceLocation loc, const std::string &name,
+          std::unique_ptr<TypeNode> &type, std::unique_ptr<Expr> &init)
+      : Stmt(loc), name_(name), type_(std::move(type)), init_(std::move(init)) {
+    CHECK_PTR(type_);
+  }
+  VarDecl(const SourceLocation loc, const std::string &name, TypeNode *type,
+          std::unique_ptr<Expr> &init)
+      : Stmt(loc), name_(name), type_(type), init_(std::move(init)) {
     CHECK_PTR(type_);
   }
   NodeKind getKind() const override { return NODE_VARDECL; }
 
+  const std::string &getName() const { return name_; }
   const TypeNode &getTypeNode() const { return *type_; }
   std::unique_ptr<Type> getType() const { return type_->toType(); }
+  bool hasInit() const { return bool(init_); }
+  const Expr &getInit() const {
+    CHECK(hasInit(), "This VarDecl was created without an initial value.");
+    return *init_;
+  }
 
  private:
+  std::string name_;
+  std::unique_ptr<TypeNode> type_;
+  std::unique_ptr<Expr> init_;
+};
+
+class Param : public Node {
+ public:
+  Param(const SourceLocation loc, const std::string &name,
+        std::unique_ptr<TypeNode> &type)
+      : Node(loc), name_(name), type_(std::move(type)) {
+    CHECK_PTR(type_);
+  }
+  NodeKind getKind() const override { return NODE_PARAM; }
+
+  const std::string &getName() const { return name_; }
+  const TypeNode &getTypeNode() const { return *type_; }
+
+ private:
+  std::string name_;
   std::unique_ptr<TypeNode> type_;
 };
 
@@ -252,7 +292,7 @@ class VarDecl : public ExternDecl {
 class FuncTypeNode : public TypeNode {
  public:
   FuncTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &ret_type,
-               std::vector<std::unique_ptr<VarDecl>> &params)
+               std::vector<std::unique_ptr<Param>> &params)
       : TypeNode(loc),
         ret_type_(std::move(ret_type)),
         params_(std::move(params)) {
@@ -261,7 +301,7 @@ class FuncTypeNode : public TypeNode {
   }
 
   const TypeNode &getReturnTypeNode() const { return *ret_type_; }
-  const std::vector<std::unique_ptr<VarDecl>> &getParams() const {
+  const std::vector<std::unique_ptr<Param>> &getParams() const {
     return params_;
   }
 
@@ -278,7 +318,7 @@ class FuncTypeNode : public TypeNode {
 
  private:
   std::unique_ptr<TypeNode> ret_type_;
-  std::vector<std::unique_ptr<VarDecl>> params_;
+  std::vector<std::unique_ptr<Param>> params_;
 };
 
 /**
@@ -291,9 +331,24 @@ class FuncDecl : public VarDecl {
       : VarDecl(loc, name, func_type.release()) {}
 };
 
-class Stmt : public Node {
+/**
+ * <ID> = <Expr>;
+ */
+class Assign : public Stmt {
  public:
-  Stmt(const SourceLocation loc) : Node(loc) {}
+  Assign(std::unique_ptr<Expr> &lhs, std::unique_ptr<Expr> &expr)
+      : Stmt(lhs->getLoc()), lhs_(std::move(lhs)), expr_(std::move(expr)) {
+    CHECK_PTR(lhs_);
+    CHECK_PTR(expr_);
+  }
+
+  NodeKind getKind() const override { return NODE_ASSIGN; }
+  const Expr &getLHS() const { return *lhs_; }
+  const Expr &getExpr() const { return *expr_; }
+
+ private:
+  std::unique_ptr<Expr> lhs_;
+  std::unique_ptr<Expr> expr_;
 };
 
 class CallStmt : public Stmt {
@@ -352,7 +407,6 @@ class Parser {
 
  private:
   bool ParseExternDecl(std::unique_ptr<ExternDecl> &result);
-  bool ParseVarDecl(std::unique_ptr<VarDecl> &result);
   bool ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts);
   bool ParseStmt(std::unique_ptr<Stmt> &stmt);
   bool ParseReturn(std::unique_ptr<Return> &result);
@@ -360,6 +414,18 @@ class Parser {
   bool ParseSingleExpr(std::unique_ptr<Expr> &result);
   bool ParseTypeNode(std::unique_ptr<TypeNode> &result);
   bool ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result);
+  bool ParseParam(std::unique_ptr<Param> &result);
+
+  // Parse nodes, but already having lexed one ID token from the lexer.
+  bool ParseVarDeclAfterID(const Token &id_tok,
+                           std::unique_ptr<VarDecl> &result);
+  bool ParseExprAfterID(const Token &id_tok, std::unique_ptr<Expr> &result);
+  bool ParseSingleExprAfterID(const Token &id_tok,
+                              std::unique_ptr<Expr> &result);
+
+  // Attempt to parse a call given an expression. If we are able to make a call
+  // but run into an error parsing it, we return false. Otherwise, return true.
+  bool TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr);
 
   const Diagnostic &getDiag() const { return diag_; }
 
