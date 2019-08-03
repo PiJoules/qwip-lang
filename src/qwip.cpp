@@ -96,7 +96,8 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  if (!compiler.SaveToExecutable(cmd_args.output_file)) return 1;
+  if (!compiler.SaveToExecutable(cmd_args.input_file, cmd_args.output_file))
+    return 1;
 
   return 0;
 }

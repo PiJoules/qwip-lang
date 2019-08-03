@@ -297,7 +297,8 @@ bool Compiler::CompileVarDecl(const VarDecl &stmt, llvm::IRBuilder<> &builder) {
   return true;
 }
 
-bool Compiler::SaveToExecutable(const std::string &output_filename) {
+bool Compiler::SaveToExecutable(const std::string &input_filename,
+                                const std::string &output_filename) {
   llvm::InitializeAllTargetInfos();
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -323,7 +324,7 @@ bool Compiler::SaveToExecutable(const std::string &output_filename) {
   llvm_module_->setDataLayout(TheTargetMachine->createDataLayout());
 
   std::error_code err_code;
-  std::string object_filename = "tmp.o";
+  std::string object_filename = input_filename + ".o";
   llvm::raw_fd_ostream dest(object_filename, err_code, llvm::sys::fs::F_None);
   if (err_code) {
     std::cerr << "Could not open file: " << err_code.message();
@@ -332,7 +333,8 @@ bool Compiler::SaveToExecutable(const std::string &output_filename) {
 
   llvm::legacy::PassManager pass;
   if (TheTargetMachine->addPassesToEmitFile(
-          pass, dest, llvm::TargetMachine::CGFT_ObjectFile)) {
+          pass, dest, /*DwoOut=*/nullptr,
+          llvm::TargetMachine::CGFT_ObjectFile)) {
     std::cerr << "TheTargetMachine can't emit a file of this type\n";
     return false;
   }
@@ -355,7 +357,8 @@ bool Compiler::SaveToExecutable(const std::string &output_filename) {
   std::string err_msg;
 
   int result =
-      llvm::sys::ExecuteAndWait(cc_binary, args.data(), /*Env=*/nullptr,
+      llvm::sys::ExecuteAndWait(cc_binary, llvm::toStringRefArray(args.data()),
+                                /*Env=*/llvm::None,
                                 /*Redirects=*/{},
                                 /*secondsToWait*/ 0,
                                 /*memoryLimit*/ 0, &err_msg);

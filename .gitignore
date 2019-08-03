@@ -1,4 +1,7 @@
 gn/
 *.out
 qwip
+qwip-asan
 *.o
+*.dSYM/
+*.pyc

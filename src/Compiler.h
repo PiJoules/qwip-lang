@@ -17,7 +17,8 @@ class Compiler {
     CHECK_PTR(llvm_module_);
     return *llvm_module_;
   }
-  bool SaveToExecutable(const std::string &output_file);
+  bool SaveToExecutable(const std::string &input_filename,
+                        const std::string &output_file);
 
  private:
   bool CompileExternDecl(const ExternDecl &decl);
