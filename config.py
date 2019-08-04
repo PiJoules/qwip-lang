@@ -23,7 +23,6 @@ HDRS = [
 ]
 ALL_SRCS = SRCS + HDRS
 
-
 # Add new tests here!
 TESTS = {
     "1-empty-main.qw": "",
