@@ -41,8 +41,10 @@ class Type {
 class FuncType : public Type {
  public:
   FuncType(std::unique_ptr<Type> &ret_type,
-           std::vector<std::unique_ptr<Type>> &arg_types)
-      : ret_type_(std::move(ret_type)), arg_types_(std::move(arg_types)) {
+           std::vector<std::unique_ptr<Type>> &arg_types, bool isvararg)
+      : ret_type_(std::move(ret_type)),
+        arg_types_(std::move(arg_types)),
+        isvararg_(isvararg) {
     CHECK_PTR(ret_type_);
     CHECK_PTRS(arg_types_);
   }
@@ -52,10 +54,12 @@ class FuncType : public Type {
   const std::vector<std::unique_ptr<Type>> &getArgTypes() const {
     return arg_types_;
   }
+  bool isVarArg() const { return isvararg_; }
 
  private:
   std::unique_ptr<Type> ret_type_;
   std::vector<std::unique_ptr<Type>> arg_types_;
+  bool isvararg_;
 };
 
 class IDType : public Type {
@@ -292,10 +296,11 @@ class Param : public Node {
 class FuncTypeNode : public TypeNode {
  public:
   FuncTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &ret_type,
-               std::vector<std::unique_ptr<Param>> &params)
+               std::vector<std::unique_ptr<Param>> &params, bool isvararg)
       : TypeNode(loc),
         ret_type_(std::move(ret_type)),
-        params_(std::move(params)) {
+        params_(std::move(params)),
+        isvararg_(isvararg) {
     CHECK_PTR(ret_type_);
     CHECK_PTRS(params_);
   }
@@ -304,6 +309,7 @@ class FuncTypeNode : public TypeNode {
   const std::vector<std::unique_ptr<Param>> &getParams() const {
     return params_;
   }
+  bool isVarArg() const { return isvararg_; }
 
   NodeKind getKind() const override { return NODE_FUNC_TYPE; }
   std::unique_ptr<Type> toType() const override {
@@ -313,12 +319,13 @@ class FuncTypeNode : public TypeNode {
       auto param_type = param_ptr->getTypeNode().toType();
       arg_types.push_back(std::move(param_type));
     }
-    return std::unique_ptr<Type>(new FuncType(ret_type, arg_types));
+    return std::unique_ptr<Type>(new FuncType(ret_type, arg_types, isvararg_));
   }
 
  private:
   std::unique_ptr<TypeNode> ret_type_;
   std::vector<std::unique_ptr<Param>> params_;
+  bool isvararg_;
 };
 
 /**
@@ -329,6 +336,8 @@ class FuncDecl : public VarDecl {
   FuncDecl(const SourceLocation loc, const std::string &name,
            std::unique_ptr<FuncTypeNode> &func_type)
       : VarDecl(loc, name, func_type.release()) {}
+
+  NodeKind getKind() const override { return NODE_FUNCDECL; }
 };
 
 /**
@@ -363,6 +372,25 @@ class CallStmt : public Stmt {
 
  private:
   std::unique_ptr<Call> call_;
+};
+
+class ExternVarDecl : public ExternDecl {
+ public:
+  ExternVarDecl(std::unique_ptr<VarDecl> &decl)
+      : ExternDecl(decl->getLoc(), decl->getName()), decl_(std::move(decl)) {
+    CHECK_PTR(decl_);
+  }
+  ExternVarDecl(VarDecl *decl)
+      : ExternDecl(decl->getLoc(), decl->getName()), decl_(decl) {
+    CHECK_PTR(decl_);
+  }
+
+  NodeKind getKind() const override { return NODE_EXTERN_VARDECL; }
+
+  const VarDecl &getDecl() const { return *decl_; }
+
+ private:
+  std::unique_ptr<VarDecl> decl_;
 };
 
 class FuncDef : public ExternDecl {

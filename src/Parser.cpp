@@ -66,11 +66,20 @@ bool Parser::ParseExternDecl(std::unique_ptr<ExternDecl> &result) {
   std::unique_ptr<FuncTypeNode> func_type;
   if (!ParseFuncTypeNode(func_type)) return false;
 
+  auto funcdecl = std::make_unique<FuncDecl>(declloc, declname, func_type);
+
+  TRY_PEEK(lexer_, tok);
+  if (tok.kind == TOK_SEMICOL) {
+    // Just a function declaration.
+    TRY_LEX(lexer_, tok);
+    result = std::make_unique<ExternVarDecl>(funcdecl.release());
+    return true;
+  }
+
   // { ... }
   std::vector<std::unique_ptr<Stmt>> stmts;
   if (!ParseBracedStmts(stmts)) return false;
 
-  auto funcdecl = std::make_unique<FuncDecl>(declloc, declname, func_type);
   result = std::make_unique<FuncDef>(funcdecl, stmts);
   return true;
 }
@@ -287,6 +296,7 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
 
   // Parse arguments.
   std::vector<std::unique_ptr<Param>> params;
+  bool isvararg = false;
 
   Token lookahead;
   TRY_PEEK(lexer_, lookahead);
@@ -295,7 +305,23 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
     while (1) {
       // Consume and read statements.
       TRY_PEEK(lexer_, tok);
-      if (tok.kind != TOK_ID) {
+      if (tok.kind == TOK_VARARG) {
+        TRY_LEX(lexer_, tok);
+        if (isvararg) {
+          // Was declared twice.
+          diag_.Err(tok.loc) << "Can only declare variadic arguments once.";
+          return false;
+        }
+        isvararg = true;
+
+        TRY_PEEK(lexer_, tok);
+        if (tok.kind != TOK_RPAR) {
+          diag_.Err(tok.loc) << "If there is a variadic argument, it can only "
+                                "be the last argument in the function.";
+          return false;
+        }
+        break;
+      } else if (tok.kind != TOK_ID) {
         diag_.Err(tok.loc)
             << "Expected either a function argument (as an ID) or a closing "
                "parethesis when parsing a function definition.";
@@ -337,7 +363,7 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
   std::unique_ptr<TypeNode> ret_type;
   if (!ParseTypeNode(ret_type)) return false;
 
-  result = std::make_unique<FuncTypeNode>(loc, ret_type, params);
+  result = std::make_unique<FuncTypeNode>(loc, ret_type, params, isvararg);
   return true;
 }
 

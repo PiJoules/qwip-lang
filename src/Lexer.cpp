@@ -83,6 +83,21 @@ bool Lexer::Lex(Token &result) {
     result.kind = TOK_SUB;
     result.chars = "-";
     return true;
+  } else if (next_char == '.') {
+    // ... for variable arguments.
+    getNextChar();
+    if (getNextChar() != '.' || getNextChar() != '.') {
+      result.loc.line = line_;
+      result.loc.col = col_;
+      getDiag().Err(result.loc)
+          << "Expected '...' to indicate variadic arguments.";
+      return false;
+    }
+    result.loc.line = line_;
+    result.loc.col = col_;
+    result.kind = TOK_VARARG;
+    result.chars = "...";
+    return true;
   }
 
   // Handle single char tokens.

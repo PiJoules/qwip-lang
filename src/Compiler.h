@@ -22,6 +22,7 @@ class Compiler {
 
  private:
   bool CompileExternDecl(const ExternDecl &decl);
+  bool CompileExternVarDecl(const ExternVarDecl &decl);
   bool CompileFuncDef(const FuncDef &funcdef);
   bool CompileFuncDecl(const FuncDecl &funcdecl, llvm::Function *&result);
   bool CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder);
