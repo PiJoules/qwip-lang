@@ -26,9 +26,10 @@ def parse_args():
     parser = ArgumentParser(
         description="Python script for formatting qwip source files.",
         formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--formatter",
-                        default=DEFAULT_FORMATTER,
-                        help="The C++ formatter to use.")
+    parser.add_argument(
+        "--formatter",
+        default=DEFAULT_FORMATTER,
+        help="The C++ formatter to use.")
     return parser.parse_args()
 
 

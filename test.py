@@ -53,10 +53,11 @@ def build_in_parallel(use_valgrind=False, use_asan=False):
             "-o",
             out_file,
         ]
-        process = config.ProcessWrapper(descriptor="Building " + test,
-                                        cmd=cmd,
-                                        stdout=test_stdout,
-                                        stderr=test_stderr)
+        process = config.ProcessWrapper(
+            descriptor="Building " + test,
+            cmd=cmd,
+            stdout=test_stdout,
+            stderr=test_stderr)
         processes.append(process)
 
     for process in processes:
@@ -95,11 +96,13 @@ def parse_args():
     """Parse arguments."""
     from argparse import ArgumentParser
     from argparse import ArgumentDefaultsHelpFormatter
-    parser = ArgumentParser(description="Python script for testing qwip.",
-                            formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--use-valgrind",
-                        action="store_true",
-                        help="Use valgring when running tests.")
+    parser = ArgumentParser(
+        description="Python script for testing qwip.",
+        formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "--use-valgrind",
+        action="store_true",
+        help="Use valgring when running tests.")
     parser.add_argument(
         "--use-asan",
         action="store_true",

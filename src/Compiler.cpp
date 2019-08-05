@@ -16,40 +16,6 @@ namespace qwip {
 
 namespace {
 
-llvm::Function *getPrintFunction(llvm::Module &module) {
-  if (llvm::GlobalValue *printf_func = module.getNamedValue("print"))
-    return llvm::cast<llvm::Function>(printf_func);
-
-  llvm::LLVMContext &context = module.getContext();
-  auto *printf_type = llvm::FunctionType::get(
-      llvm::Type::getInt32Ty(context), {llvm::Type::getInt8PtrTy(context)},
-      /*isVarArg=*/true);
-  llvm::Function *printf_func = llvm::Function::Create(
-      printf_type, llvm::GlobalValue::ExternalLinkage, "printf", &module);
-
-  auto *print_type = llvm::FunctionType::get(
-      llvm::Type::getVoidTy(context), {llvm::Type::getInt8PtrTy(context)},
-      /*isVarArg=*/false);
-  llvm::Function *print_func = llvm::Function::Create(
-      print_type, llvm::GlobalValue::ExternalLinkage, "print", &module);
-
-  // Create the body.
-  llvm::BasicBlock *entry =
-      llvm::BasicBlock::Create(context, "entry", print_func);
-  llvm::IRBuilder<> builder(entry);
-  llvm::Value *first_arg = print_func->arg_begin();
-  llvm::CallInst *tailcall = builder.CreateCall(printf_func, {first_arg});
-  tailcall->setTailCall();
-  builder.CreateRetVoid();
-
-  return print_func;
-}
-
-typedef llvm::Function *(*FunctionMaker)(llvm::Module &);
-const std::unordered_map<std::string, FunctionMaker> kBuiltinFunctions = {
-    {"print", getPrintFunction},
-};
-
 bool FindExe(const std::string &exe_name, std::string &linker_path) {
   auto result = llvm::sys::findProgramByName(exe_name);
   linker_path = result.get();
@@ -242,11 +208,6 @@ llvm::Value *Compiler::getAddrOfVariable(const std::string &name,
   if (result) return result;
 
   // Then check globals.
-  auto found_builtin = kBuiltinFunctions.find(name);
-  if (found_builtin != kBuiltinFunctions.end()) {
-    FunctionMaker func_maker = found_builtin->second;
-    return func_maker(getLLVMModule());
-  }
   if (llvm::GlobalValue *val = getLLVMModule().getNamedValue(name)) return val;
 
   return nullptr;
@@ -279,7 +240,11 @@ bool Compiler::CompileStr(const Str &expr, llvm::IRBuilder<> &builder,
       getLLVMModule(), str->getType(), /*isConstant=*/true,
       llvm::GlobalValue::PrivateLinkage, str);
   global_str->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  result = global_str;
+
+  // Use GEP to convert the char array to a char pointer.
+  llvm::Value *zero =
+      llvm::Constant::getNullValue(llvm::Type::getInt32Ty(llvm_context_));
+  result = builder.CreateGEP(global_str, {zero, zero});
   return true;
 }
 
