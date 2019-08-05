@@ -28,6 +28,7 @@ TESTS = {
     "1-empty-main.qw": "",
     "2-hello-world.qw": "Hello World!\n",
     "3-variable-declaration.qw": "Test\nTest\n",
+    "4-print-format.qw": "10\n",
 }
 
 

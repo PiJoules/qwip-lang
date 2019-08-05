@@ -206,7 +206,7 @@ bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
 bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
                           llvm::Value *&result) {
   result = llvm::ConstantInt::get(llvm_context_,
-                                  llvm::APInt(/*num_bits=*/64, expr.getVal(),
+                                  llvm::APInt(/*num_bits=*/32, expr.getVal(),
                                               /*isSigned=*/true));
   return true;
 }
