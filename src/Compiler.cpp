@@ -155,8 +155,19 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef) {
   llvm::IRBuilder<> builder(llvm_context_);
   builder.SetInsertPoint(entry_block);
 
+  if (funcdef.getStmts().empty()) {
+    builder.CreateRetVoid();
+    return true;
+  }
+
   for (const auto &stmt_ptr : funcdef.getStmts()) {
     if (!CompileStmt(*stmt_ptr, builder)) return false;
+  }
+
+  if (!entry_block->getTerminator()) {
+    // Return null by default.
+    std::cerr << "No explicit return provided. Returning 0.\n";
+    builder.CreateRet(llvm::Constant::getNullValue(func->getReturnType()));
   }
 
   return true;

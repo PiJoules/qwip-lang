@@ -1,0 +1,7 @@
+printf: (fmt: i8*, ...) -> void;
+
+main: () -> i32 {
+  x: i32 = 10;
+  printf("%d\n", x);
+  ret 0;
+}
