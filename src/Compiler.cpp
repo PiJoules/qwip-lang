@@ -146,6 +146,15 @@ bool Compiler::CompileExternVarDecl(const ExternVarDecl &extern_decl) {
       });
 }
 
+bool Compiler::CompileStmts(
+  const std::vector<std::unique_ptr<Stmt>> &stmts,
+  llvm::IRBuilder<> &builder) {
+  for (const auto &stmt_ptr : stmts) {
+    if (!CompileStmt(*stmt_ptr, builder)) return false;
+  }
+  return true;
+}
+
 bool Compiler::CompileFuncDef(const FuncDef &funcdef) {
   llvm::Function *func;
   if (!CompileFuncDecl(funcdef.getDecl(), func)) return false;
@@ -155,14 +164,8 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef) {
   llvm::IRBuilder<> builder(llvm_context_);
   builder.SetInsertPoint(entry_block);
 
-  if (funcdef.getStmts().empty()) {
-    builder.CreateRetVoid();
-    return true;
-  }
-
-  for (const auto &stmt_ptr : funcdef.getStmts()) {
-    if (!CompileStmt(*stmt_ptr, builder)) return false;
-  }
+  if (!CompileStmts(funcdef.getStmts(), builder))
+    return false;
 
   if (!entry_block->getTerminator()) {
     // Return null by default.
@@ -242,6 +245,30 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
+bool Compiler::CompileBinOp(const BinOp &expr,
+                            llvm::IRBuilder<> &builder,
+                            llvm::Value *&result) {
+  llvm::Value *lhs_val, *rhs_val;
+  if (!CompileExpr(expr.getLHS(), builder, lhs_val))
+    return false;
+  if (!CompileExpr(expr.getRHS(), builder, rhs_val))
+    return false;
+
+  switch (expr.getBinOp()) {
+    case BINOP_LT:
+      result = builder.CreateICmpSLT(lhs_val, rhs_val);
+      break;
+    case BINOP_SUB:
+      result = builder.CreateSub(lhs_val, rhs_val);
+      break;
+    case BINOP_ADD:
+      result = builder.CreateAdd(lhs_val, rhs_val);
+      break;
+  }
+
+  return true;
+}
+
 bool Compiler::CompileStr(const Str &expr, llvm::IRBuilder<> &builder,
                           llvm::Value *&result) {
   llvm::Constant *str =
@@ -279,6 +306,44 @@ bool Compiler::CompileReturn(const Return &stmt, llvm::IRBuilder<> &builder) {
   llvm::Value *ret_val;
   if (!CompileExpr(stmt.getExpr(), builder, ret_val)) return false;
   builder.CreateRet(ret_val);
+  return true;
+}
+
+
+bool Compiler::CompileIf(const If &stmt, llvm::IRBuilder<> &builder) {
+  llvm::Value *cond_val;
+  if (!CompileExpr(stmt.getCond(), builder, cond_val))
+    return false;
+  llvm::Constant *zero = llvm::Constant::getNullValue(cond_val->getType());
+  cond_val = builder.CreateICmpNE(cond_val, zero);
+
+  llvm::Function *func = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock *thenbb = llvm::BasicBlock::Create(
+    llvm_context_, "then", func);
+  llvm::BasicBlock *elsebb = llvm::BasicBlock::Create(
+    llvm_context_, "else");
+  llvm::BasicBlock *mergebb = llvm::BasicBlock::Create(
+    llvm_context_, "merge");
+
+  builder.CreateCondBr(cond_val, thenbb, mergebb);
+
+  // Emit the then block.
+  builder.SetInsertPoint(thenbb);
+  if (!CompileStmts(stmt.getBody(), builder))
+    return false;
+  builder.CreateBr(mergebb);
+
+  // Emit the else block.
+  func->getBasicBlockList().push_back(elsebb);
+  builder.SetInsertPoint(elsebb);
+  if (!CompileStmts(stmt.getElseBody(), builder))
+    return false;
+  builder.CreateBr(mergebb);
+
+  // Emit the merge block.
+  func->getBasicBlockList().push_back(mergebb);
+  builder.SetInsertPoint(mergebb);
+
   return true;
 }
 
