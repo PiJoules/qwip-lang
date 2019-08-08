@@ -22,6 +22,7 @@ TOKEN(TOK_VARARG)		// ...
 KEYWORD(TOK_RET, 	"ret")			// ret
 KEYWORD(TOK_IF,		"if")			// if
 KEYWORD(TOK_ELSE,	"else")			// else
+KEYWORD(TOK_WHILE,	"while")		// while
 
 TOKEN_1CHAR(TOK_LPAR, 		'(')		// (
 TOKEN_1CHAR(TOK_RPAR, 		')')		// )
@@ -35,6 +36,7 @@ TOKEN_1CHAR(TOK_ASSIGN, 	'=')		// =
 
 TOKEN_1CHAR(TOK_LT, 		'<')		// <
 TOKEN_1CHAR(TOK_ADD, 		'+')		// +
+TOKEN(TOK_LE)					// <=
 
 // Note that this could conflict with -> when lexing.
 TOKEN_1CHAR(TOK_SUB, 		'-')		// -

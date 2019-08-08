@@ -29,6 +29,7 @@ TESTS = {
     "2-hello-world.qw": "Hello World!\n",
     "3-variable-declaration.qw": "Test\nTest\n",
     "4-print-format.qw": "10\n",
+    "5-fibonacci.qw": "0\n1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n",
 }
 
 

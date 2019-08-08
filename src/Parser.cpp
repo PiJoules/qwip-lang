@@ -129,6 +129,11 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     if (!ParseIf(stmt)) return false;
     result = std::move(stmt);
     return true;
+  } else if (lookahead.kind == TOK_WHILE) {
+    std::unique_ptr<While> stmt;
+    if (!ParseWhile(stmt)) return false;
+    result = std::move(stmt);
+    return true;
   } else if (lookahead.kind == TOK_ID) {
     // Parse an expression statement or a variable declaration.
     Token id_tok;
@@ -206,6 +211,23 @@ bool Parser::ParseReturn(std::unique_ptr<Return> &result) {
   return true;
 }
 
+bool Parser::ParseWhile(std::unique_ptr<While> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  CHECK(tok.kind == TOK_WHILE, "Expected a while.");
+  SourceLocation whileloc = tok.loc;
+
+  std::unique_ptr<Expr> cond;
+  if (!ParseExpr(cond)) return false;
+
+  // { ... }
+  std::vector<std::unique_ptr<Stmt>> stmts;
+  if (!ParseBracedStmts(stmts)) return false;
+
+  result = std::make_unique<While>(whileloc, cond, stmts);
+  return true;
+}
+
 bool Parser::ParseIf(std::unique_ptr<If> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
@@ -213,8 +235,7 @@ bool Parser::ParseIf(std::unique_ptr<If> &result) {
   SourceLocation ifloc = tok.loc;
 
   std::unique_ptr<Expr> cond;
-  if (!ParseExpr(cond))
-    return false;
+  if (!ParseExpr(cond)) return false;
 
   // { ... }
   std::vector<std::unique_ptr<Stmt>> stmts;
@@ -416,6 +437,9 @@ static bool BinOpCodeFromTokenKind(TokenKind kind, BinOpCode &op) {
     case TOK_LT:
       op = BINOP_LT;
       return true;
+    case TOK_LE:
+      op = BINOP_LE;
+      return true;
     case TOK_ADD:
       op = BINOP_ADD;
       return true;
@@ -435,13 +459,11 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
     if (BinOpCodeFromTokenKind(tok.kind, op)) {
       TRY_LEX(lexer_, tok);
       std::unique_ptr<Expr> rhs;
-      if (!ParseExpr(rhs))
-        return false;
+      if (!ParseExpr(rhs)) return false;
       expr = std::make_unique<BinOp>(expr, rhs, op);
       continue;
     } else if (tok.kind == TOK_LPAR) {
-      if (!TryToMakeCallAfterExpr(expr))
-        return false;
+      if (!TryToMakeCallAfterExpr(expr)) return false;
       continue;
     }
     break;
@@ -535,7 +557,8 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       return ParseSingleExprAfterID(tok, result);
     }
     default:
-      diag_.Err(lookahead.loc) << "Expected an expression. Found " << TokenKindAsString(lookahead.kind) << ".";
+      diag_.Err(lookahead.loc) << "Expected an expression. Found "
+                               << TokenKindAsString(lookahead.kind) << ".";
       return false;
   }
 }

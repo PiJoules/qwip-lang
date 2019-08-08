@@ -103,13 +103,6 @@ bool Compiler::CompileFuncDecl(const FuncDecl &funcdecl,
       llvm::Function::Create(llvm_func_type, llvm::Function::ExternalLinkage,
                              funcdecl.getName(), llvm_module_.get());
 
-  // Assign the argument names.
-  const auto &params = func_type_node.getParams();
-  unsigned Idx = 0;
-  for (auto &arg : result->args()) {
-    arg.setName(params[Idx++]->getName());
-  }
-
   return true;
 }
 
@@ -146,9 +139,8 @@ bool Compiler::CompileExternVarDecl(const ExternVarDecl &extern_decl) {
       });
 }
 
-bool Compiler::CompileStmts(
-  const std::vector<std::unique_ptr<Stmt>> &stmts,
-  llvm::IRBuilder<> &builder) {
+bool Compiler::CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
+                            llvm::IRBuilder<> &builder) {
   for (const auto &stmt_ptr : stmts) {
     if (!CompileStmt(*stmt_ptr, builder)) return false;
   }
@@ -164,8 +156,19 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef) {
   llvm::IRBuilder<> builder(llvm_context_);
   builder.SetInsertPoint(entry_block);
 
-  if (!CompileStmts(funcdef.getStmts(), builder))
-    return false;
+  // Store the arguments.
+  const TypeNode &type_node = funcdef.getDecl().getTypeNode();
+  CHECK(type_node.getKind() == NODE_FUNC_TYPE, "Expected a function type node");
+  const auto &func_type_node = type_node.getAs<FuncTypeNode>();
+  const auto &params = func_type_node.getParams();
+  for (auto &arg : func->args()) {
+    llvm::Value *value_addr =
+        builder.CreateAlloca(arg.getType(), /*ArraySize=*/nullptr,
+                             params[arg.getArgNo()]->getName());
+    builder.CreateStore(&arg, value_addr, /*isVolatile=*/false);
+  }
+
+  if (!CompileStmts(funcdef.getStmts(), builder)) return false;
 
   if (!entry_block->getTerminator()) {
     // Return null by default.
@@ -245,18 +248,18 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
-bool Compiler::CompileBinOp(const BinOp &expr,
-                            llvm::IRBuilder<> &builder,
+bool Compiler::CompileBinOp(const BinOp &expr, llvm::IRBuilder<> &builder,
                             llvm::Value *&result) {
   llvm::Value *lhs_val, *rhs_val;
-  if (!CompileExpr(expr.getLHS(), builder, lhs_val))
-    return false;
-  if (!CompileExpr(expr.getRHS(), builder, rhs_val))
-    return false;
+  if (!CompileExpr(expr.getLHS(), builder, lhs_val)) return false;
+  if (!CompileExpr(expr.getRHS(), builder, rhs_val)) return false;
 
   switch (expr.getBinOp()) {
     case BINOP_LT:
       result = builder.CreateICmpSLT(lhs_val, rhs_val);
+      break;
+    case BINOP_LE:
+      result = builder.CreateICmpSLE(lhs_val, rhs_val);
       break;
     case BINOP_SUB:
       result = builder.CreateSub(lhs_val, rhs_val);
@@ -298,7 +301,7 @@ bool Compiler::CompileCall(const Call &expr, llvm::IRBuilder<> &builder,
     args.push_back(llvm_arg);
   }
 
-  builder.CreateCall(caller, args);
+  result = builder.CreateCall(caller, args);
   return true;
 }
 
@@ -309,35 +312,60 @@ bool Compiler::CompileReturn(const Return &stmt, llvm::IRBuilder<> &builder) {
   return true;
 }
 
+bool Compiler::CompileWhile(const While &stmt, llvm::IRBuilder<> &builder) {
+  llvm::Function *func = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock *loop_startbb =
+      llvm::BasicBlock::Create(llvm_context_, "loop_start", func);
+  llvm::BasicBlock *loopbb = llvm::BasicBlock::Create(llvm_context_, "loop");
+  llvm::BasicBlock *loop_endbb =
+      llvm::BasicBlock::Create(llvm_context_, "loop_exit");
+
+  builder.CreateBr(loop_startbb);
+  builder.SetInsertPoint(loop_startbb);
+
+  llvm::Value *cond_val;
+  if (!CompileExpr(stmt.getCond(), builder, cond_val)) return false;
+  llvm::Constant *zero = llvm::Constant::getNullValue(cond_val->getType());
+  cond_val = builder.CreateICmpNE(cond_val, zero);
+
+  builder.CreateCondBr(cond_val, loopbb, loop_endbb);
+
+  // Emit the then block.
+  func->getBasicBlockList().push_back(loopbb);
+  builder.SetInsertPoint(loopbb);
+  if (!CompileStmts(stmt.getBody(), builder)) return false;
+  builder.CreateBr(loop_startbb);
+
+  // Emit the merge block.
+  func->getBasicBlockList().push_back(loop_endbb);
+  builder.SetInsertPoint(loop_endbb);
+
+  return true;
+}
 
 bool Compiler::CompileIf(const If &stmt, llvm::IRBuilder<> &builder) {
   llvm::Value *cond_val;
-  if (!CompileExpr(stmt.getCond(), builder, cond_val))
-    return false;
+  if (!CompileExpr(stmt.getCond(), builder, cond_val)) return false;
   llvm::Constant *zero = llvm::Constant::getNullValue(cond_val->getType());
   cond_val = builder.CreateICmpNE(cond_val, zero);
 
   llvm::Function *func = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock *thenbb = llvm::BasicBlock::Create(
-    llvm_context_, "then", func);
-  llvm::BasicBlock *elsebb = llvm::BasicBlock::Create(
-    llvm_context_, "else");
-  llvm::BasicBlock *mergebb = llvm::BasicBlock::Create(
-    llvm_context_, "merge");
+  llvm::BasicBlock *thenbb =
+      llvm::BasicBlock::Create(llvm_context_, "then", func);
+  llvm::BasicBlock *elsebb = llvm::BasicBlock::Create(llvm_context_, "else");
+  llvm::BasicBlock *mergebb = llvm::BasicBlock::Create(llvm_context_, "merge");
 
   builder.CreateCondBr(cond_val, thenbb, mergebb);
 
   // Emit the then block.
   builder.SetInsertPoint(thenbb);
-  if (!CompileStmts(stmt.getBody(), builder))
-    return false;
+  if (!CompileStmts(stmt.getBody(), builder)) return false;
   builder.CreateBr(mergebb);
 
   // Emit the else block.
   func->getBasicBlockList().push_back(elsebb);
   builder.SetInsertPoint(elsebb);
-  if (!CompileStmts(stmt.getElseBody(), builder))
-    return false;
+  if (!CompileStmts(stmt.getElseBody(), builder)) return false;
   builder.CreateBr(mergebb);
 
   // Emit the merge block.

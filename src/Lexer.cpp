@@ -98,6 +98,18 @@ bool Lexer::Lex(Token &result) {
     result.kind = TOK_VARARG;
     result.chars = "...";
     return true;
+  } else if (next_char == '<') {
+    getNextChar();
+    next_char = input_.peek();
+    if (next_char == '=') {
+      getNextChar();
+      result.kind = TOK_LE;
+      result.chars = "<=";
+      return true;
+    }
+    result.kind = TOK_LT;
+    result.chars = "<";
+    return true;
   }
 
   // Handle single char tokens.

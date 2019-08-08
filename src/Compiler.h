@@ -26,7 +26,8 @@ class Compiler {
   bool CompileFuncDef(const FuncDef &funcdef);
   bool CompileFuncDecl(const FuncDecl &funcdecl, llvm::Function *&result);
   bool CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder);
-  bool CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts, llvm::IRBuilder<> &builder);
+  bool CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
+                    llvm::IRBuilder<> &builder);
 #define STMT(Kind, Class) \
   bool Compile##Class(const Class &stmt, llvm::IRBuilder<> &builder);
 #include "Nodes.def"

@@ -188,20 +188,21 @@ class ID : public Expr {
 
 enum BinOpCode {
   BINOP_LT,
+  BINOP_LE,
   BINOP_ADD,
   BINOP_SUB,
 };
 
 class BinOp : public Expr {
  public:
-  BinOp(std::unique_ptr<Expr> &lhs,
-        std::unique_ptr<Expr> &rhs,
-        BinOpCode op)
-    : Expr(lhs->getLoc()), lhs_(std::move(lhs)),
-      rhs_(std::move(rhs)), op_(op) {
-        CHECK_PTR(lhs_);
-        CHECK_PTR(rhs_);
-      }
+  BinOp(std::unique_ptr<Expr> &lhs, std::unique_ptr<Expr> &rhs, BinOpCode op)
+      : Expr(lhs->getLoc()),
+        lhs_(std::move(lhs)),
+        rhs_(std::move(rhs)),
+        op_(op) {
+    CHECK_PTR(lhs_);
+    CHECK_PTR(rhs_);
+  }
 
   NodeKind getKind() const override { return NODE_BINOP; }
   const Expr &getLHS() const { return *lhs_; }
@@ -406,15 +407,17 @@ class If : public Stmt {
  public:
   If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body)
-    : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
+      : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
     CHECK_PTR(cond_);
     CHECK_PTRS(body_);
   }
   If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body,
      std::vector<std::unique_ptr<Stmt>> &else_body)
-    : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)),
-      else_body_(std::move(else_body)) {
+      : Stmt(loc),
+        cond_(std::move(cond)),
+        body_(std::move(body)),
+        else_body_(std::move(else_body)) {
     CHECK_PTR(cond_);
     CHECK_PTRS(body_);
     CHECK_PTRS(else_body_);
@@ -422,20 +425,35 @@ class If : public Stmt {
   NodeKind getKind() const override { return NODE_IF; }
 
   const Expr &getCond() const { return *cond_; }
-  const std::vector<std::unique_ptr<Stmt>> &getBody() const {
-    return body_;
-  }
+  const std::vector<std::unique_ptr<Stmt>> &getBody() const { return body_; }
   const std::vector<std::unique_ptr<Stmt>> &getElseBody() const {
     return else_body_;
   }
-  bool hasElse() const {
-    return else_body_.empty();
-  }
+  bool hasElse() const { return else_body_.empty(); }
 
  private:
   std::unique_ptr<Expr> cond_;
   std::vector<std::unique_ptr<Stmt>> body_;
   std::vector<std::unique_ptr<Stmt>> else_body_;
+};
+
+class While : public Stmt {
+ public:
+  While(const SourceLocation loc, std::unique_ptr<Expr> &cond,
+        std::vector<std::unique_ptr<Stmt>> &body)
+      : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
+    CHECK_PTR(cond_);
+    CHECK_PTRS(body_);
+  }
+
+  NodeKind getKind() const override { return NODE_WHILE; }
+
+  const Expr &getCond() const { return *cond_; }
+  const std::vector<std::unique_ptr<Stmt>> &getBody() const { return body_; }
+
+ private:
+  std::unique_ptr<Expr> cond_;
+  std::vector<std::unique_ptr<Stmt>> body_;
 };
 
 class ExternVarDecl : public ExternDecl {
@@ -503,6 +521,7 @@ class Parser {
   bool ParseStmt(std::unique_ptr<Stmt> &stmt);
   bool ParseReturn(std::unique_ptr<Return> &result);
   bool ParseIf(std::unique_ptr<If> &result);
+  bool ParseWhile(std::unique_ptr<While> &result);
   bool ParseExpr(std::unique_ptr<Expr> &expr);
   bool ParseSingleExpr(std::unique_ptr<Expr> &result);
   bool ParseTypeNode(std::unique_ptr<TypeNode> &result);
