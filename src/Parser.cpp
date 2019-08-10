@@ -19,6 +19,10 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
       std::unique_ptr<ExternDecl> externdecl;
       if (!ParseExternDecl(externdecl)) return false;
       decls.push_back(std::move(externdecl));
+    } else if (lookahead.kind == TOK_TYPE) {
+      std::unique_ptr<ExternTypeDef> externtypedef;
+      if (!ParseExternTypeDef(externtypedef)) return false;
+      decls.push_back(std::move(externtypedef));
     } else {
       diag_.Err(lookahead.loc)
           << "Unexpected token found. External declarations in a module should "
@@ -82,6 +86,53 @@ bool Parser::ParseExternDecl(std::unique_ptr<ExternDecl> &result) {
 
   result = std::make_unique<FuncDef>(funcdecl, stmts);
   return true;
+}
+
+bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);  // type
+  CHECK(tok.kind == TOK_TYPE, "Only call ParseExternTypeDef if the previous token was a 'type'.");
+
+  // <id>
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_ID) {
+    diag_.Err(tok.loc) << "Expected the name of the custom type.";
+    return false;
+  }
+
+  // :
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_COL) {
+    diag_.Err(tok.loc) << "Expected ':' after the name of the custom type.";
+    return false;
+  }
+
+  // {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_LBRACE) {
+    diag_.Err(tok.loc) << "Expected an opening '{' in the custom type.";
+    return false;
+  }
+
+  // Statements
+  while (1) {
+    Token lookahead;
+    TRY_PEEK(lexer_, lookahead);
+
+    if (lookahead.kind == TOK_RBRACE) break;
+
+    // Consume and read statements.
+    std::unique_ptr<Stmt> stmt;
+    if (!ParseStmt(stmt)) return false;
+    stmts.push_back(std::move(stmt));
+  }
+
+  // }
+  TRY_LEX(lexer_, tok);
+  CHECK(tok.kind == TOK_RBRACE,
+        "Should only break out of the previous loop if we ran into a closing "
+        "brace.");
 }
 
 bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {

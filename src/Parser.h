@@ -302,6 +302,25 @@ class VarDecl : public Stmt {
   std::unique_ptr<Expr> init_;
 };
 
+class TypeDef : public Stmt {
+ public:
+  TypeDef(const SourceLocation loc, const std::string &name,
+          const std::vector<std::unique_ptr<VarDecl>> &members)
+    : Stmt(loc), name_(name), members_(std::move(members)) {
+      CHECK_PTRS(members_);
+    }
+
+  NodeKind getKind() const override { return NODE_TYPEDEF; }
+  const std::string &getName() const { return name_; }
+  const std::vector<std::unique_ptr<VarDecl>> &getMembers() const {
+    return members_;
+  }
+
+ private:
+  std::string name_;
+  std::vector<std::unique_ptr<VarDecl>> members_;
+};
+
 class Param : public Node {
  public:
   Param(const SourceLocation loc, const std::string &name,
@@ -475,6 +494,21 @@ class ExternVarDecl : public ExternDecl {
   std::unique_ptr<VarDecl> decl_;
 };
 
+class ExternTypeDef : public ExternDecl {
+ public:
+  ExternTypeDef(std::unique_ptr<TypeDef> &type_def)
+    : ExternDecl(type_def->getLoc(), type_def->getName()),
+      type_def_(std::move(type_def)) {
+    CHECK_PTR(type_def_);
+  }
+
+  NodeKind getKind() const override { return NODE_EXTERN_FUNCDEF; }
+  const TypeDef &getTypeDef() const { return *type_def_; }
+
+ private:
+  std::unique_ptr<TypeDef> type_def_;
+};
+
 class FuncDef : public ExternDecl {
  public:
   FuncDef(std::unique_ptr<FuncDecl> &decl,
@@ -517,6 +551,7 @@ class Parser {
 
  private:
   bool ParseExternDecl(std::unique_ptr<ExternDecl> &result);
+  bool ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result);
   bool ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts);
   bool ParseStmt(std::unique_ptr<Stmt> &stmt);
   bool ParseReturn(std::unique_ptr<Return> &result);
@@ -527,6 +562,7 @@ class Parser {
   bool ParseTypeNode(std::unique_ptr<TypeNode> &result);
   bool ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result);
   bool ParseParam(std::unique_ptr<Param> &result);
+  bool ParseTypeDef(std::unique_ptr<TypeDef> &result);
 
   // Parse nodes, but already having lexed one ID token from the lexer.
   bool ParseVarDeclAfterID(const Token &id_tok,
