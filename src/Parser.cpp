@@ -9,15 +9,20 @@
 
 namespace qwip {
 
+bool Parser::Parse(std::unique_ptr<Module> &result) {
+  return ParseModule(result);
+}
+
 bool Parser::ParseModule(std::unique_ptr<Module> &result) {
   Token lookahead;
   TRY_PEEK(lexer_, lookahead);
+  EnterScope();
 
   std::vector<std::unique_ptr<ExternDecl>> decls;
   while (lookahead.kind != TOK_EOF) {
     if (lookahead.kind == TOK_ID) {
       std::unique_ptr<ExternDecl> externdecl;
-      if (!ParseExternDecl(externdecl)) return false;
+      if (!ParseNamedExternDeclOrDef(externdecl)) return false;
       decls.push_back(std::move(externdecl));
     } else if (lookahead.kind == TOK_TYPE) {
       std::unique_ptr<ExternTypeDef> externtypedef;
@@ -41,57 +46,30 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
   return true;
 }
 
-bool Parser::ParseExternDecl(std::unique_ptr<ExternDecl> &result) {
-  Token tok;
-  TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_ID,
-        "Expected the first token when parsing an external declaration to be "
-        "an ID.");
-  SourceLocation declloc = tok.loc;
-  std::string declname = tok.chars;
+bool Parser::ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result) {
+  std::unique_ptr<Stmt> func;
+  if (!ParseNamedDeclOrDef(func)) return false;
 
-  // :
-  TRY_LEX(lexer_, tok);
-  if (tok.kind != TOK_COL) {
-    diag_.Err(tok.loc) << "Expected a : to indicate the start of the type";
-    return false;
+  if (func->getKind() == NODE_FUNCDEF) {
+    std::unique_ptr<FuncDef> funcdef(static_cast<FuncDef *>(func.release()));
+    result = std::make_unique<ExternFuncDef>(funcdef);
+  } else if (func->getKind() == NODE_VARDEF) {
+    std::unique_ptr<VarDef> vardecl(static_cast<VarDef *>(func.release()));
+    result = std::make_unique<ExternVarDef>(vardecl);
+  } else {
+    std::unique_ptr<VarDecl> vardecl(static_cast<VarDecl *>(func.release()));
+    result = std::make_unique<ExternVarDecl>(vardecl);
   }
 
-  // Parse the type of the declaration. If it is a function, it will start with
-  // a (. Otherwise it is a normal variable declaration.
-
-  // (
-  TRY_PEEK(lexer_, tok);
-  if (tok.kind != TOK_LPAR) {
-    diag_.Err(tok.loc) << "Can only declare functions for now.";
-    return false;
-  }
-
-  std::unique_ptr<FuncTypeNode> func_type;
-  if (!ParseFuncTypeNode(func_type)) return false;
-
-  auto funcdecl = std::make_unique<FuncDecl>(declloc, declname, func_type);
-
-  TRY_PEEK(lexer_, tok);
-  if (tok.kind == TOK_SEMICOL) {
-    // Just a function declaration.
-    TRY_LEX(lexer_, tok);
-    result = std::make_unique<ExternVarDecl>(funcdecl.release());
-    return true;
-  }
-
-  // { ... }
-  std::vector<std::unique_ptr<Stmt>> stmts;
-  if (!ParseBracedStmts(stmts)) return false;
-
-  result = std::make_unique<FuncDef>(funcdecl, stmts);
   return true;
 }
 
 bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);  // type
-  CHECK(tok.kind == TOK_TYPE, "Only call ParseExternTypeDef if the previous token was a 'type'.");
+  CHECK(tok.kind == TOK_TYPE,
+        "Only call ParseExternTypeDef if the previous token was a 'type'.");
+  SourceLocation typeloc = tok.loc;
 
   // <id>
   TRY_LEX(lexer_, tok);
@@ -99,6 +77,7 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
     diag_.Err(tok.loc) << "Expected the name of the custom type.";
     return false;
   }
+  std::string name = tok.chars;
 
   // :
   TRY_LEX(lexer_, tok);
@@ -108,24 +87,42 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
   }
 
   // {
-  Token tok;
   TRY_LEX(lexer_, tok);
   if (tok.kind != TOK_LBRACE) {
     diag_.Err(tok.loc) << "Expected an opening '{' in the custom type.";
     return false;
   }
 
-  // Statements
+  // Member declarations
+  std::vector<std::unique_ptr<MemberDecl>> members;
   while (1) {
     Token lookahead;
     TRY_PEEK(lexer_, lookahead);
 
     if (lookahead.kind == TOK_RBRACE) break;
 
+    TRY_PEEK(lexer_, tok);
+    if (tok.kind != TOK_ID) {
+      diag_.Err(tok.loc) << "Expected a name for a member in the type.";
+      return false;
+    }
+
     // Consume and read statements.
-    std::unique_ptr<Stmt> stmt;
-    if (!ParseStmt(stmt)) return false;
-    stmts.push_back(std::move(stmt));
+    std::unique_ptr<Stmt> nameddecl;
+    if (!ParseNamedDeclOrDef(nameddecl)) return false;
+    if (nameddecl->getKind() == NODE_VARDEF) {
+      std::unique_ptr<VarDef> vardef(
+          static_cast<VarDef *>(nameddecl.release()));
+      members.push_back(std::make_unique<MemberVarDef>(vardef));
+    } else if (nameddecl->getKind() == NODE_FUNCDEF) {
+      std::unique_ptr<FuncDef> funcdef(
+          static_cast<FuncDef *>(nameddecl.release()));
+      members.push_back(std::make_unique<MemberFuncDef>(funcdef));
+    } else {
+      diag_.Err(nameddecl->getLoc())
+          << "A new struct can only contain definitions.";
+      return false;
+    }
   }
 
   // }
@@ -133,6 +130,10 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
   CHECK(tok.kind == TOK_RBRACE,
         "Should only break out of the previous loop if we ran into a closing "
         "brace.");
+
+  auto type_def = std::make_unique<TypeDef>(typeloc, name, members);
+  result = std::make_unique<ExternTypeDef>(type_def);
+  return true;
 }
 
 bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
@@ -143,6 +144,8 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
         "Do not call ParseBracedStmts unless the previous lookahead was an "
         "opening brace.");
 
+  EnterScope();
+
   // Statements
   while (1) {
     Token lookahead;
@@ -152,7 +155,10 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
 
     // Consume and read statements.
     std::unique_ptr<Stmt> stmt;
-    if (!ParseStmt(stmt)) return false;
+    if (!ParseStmt(stmt)) {
+      ExitScope();
+      return false;
+    }
     stmts.push_back(std::move(stmt));
   }
 
@@ -162,6 +168,7 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
         "Should only break out of the previous loop if we ran into a closing "
         "brace.");
 
+  ExitScope();
   return true;
 }
 
@@ -190,13 +197,10 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     Token id_tok;
     TRY_LEX(lexer_, id_tok);
 
-    // If the next token is a :, then this is a variable declaration.
+    // If the next token is a :, then this is a declaration.
     TRY_PEEK(lexer_, lookahead);
     if (lookahead.kind == TOK_COL) {
-      std::unique_ptr<VarDecl> decl;
-      if (!ParseVarDeclAfterID(id_tok, decl)) return false;
-      result = std::move(decl);
-      return true;
+      return ParseNamedDeclOrDefAfterID(id_tok, result);
     }
 
     // Parse an expression.
@@ -330,9 +334,15 @@ bool Parser::ParseParam(std::unique_ptr<Param> &result) {
   return true;
 }
 
-bool Parser::ParseVarDeclAfterID(const Token &id_tok,
-                                 std::unique_ptr<VarDecl> &result) {
+bool Parser::ParseNamedDeclOrDef(std::unique_ptr<Stmt> &result) {
+  Token id_tok;
+  TRY_LEX(lexer_, id_tok);
   CHECK(id_tok.kind == TOK_ID, "Expected an ID");
+  return ParseNamedDeclOrDefAfterID(id_tok, result);
+}
+
+bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
+                                        std::unique_ptr<Stmt> &result) {
   std::string name = id_tok.chars;
   SourceLocation loc = id_tok.loc;
 
@@ -345,25 +355,49 @@ bool Parser::ParseVarDeclAfterID(const Token &id_tok,
 
   std::unique_ptr<TypeNode> type;
   if (!ParseTypeNode(type)) return false;
-
-  // Check for an initial value.
-  std::unique_ptr<Expr> init;
-  TRY_PEEK(lexer_, tok);
-  if (tok.kind == TOK_ASSIGN) {
-    TRY_LEX(lexer_, tok);
-    if (!ParseExpr(init)) return false;
-  }
+  auto decl = std::make_unique<VarDecl>(loc, name, type);
 
   // ;
-  TRY_LEX(lexer_, tok);
-  if (tok.kind != TOK_SEMICOL) {
-    diag_.Err(tok.loc)
-        << "Expected a ';' to denote the end of a return statement.";
-    return false;
+  TRY_PEEK(lexer_, tok);
+  if (tok.kind == TOK_SEMICOL) {
+    TRY_LEX(lexer_, tok);
+    result = std::move(decl);
+    return true;
   }
 
-  result = std::make_unique<VarDecl>(loc, name, type, init);
-  return true;
+  // =
+  if (tok.kind == TOK_ASSIGN) {
+    TRY_LEX(lexer_, tok);
+    std::unique_ptr<Expr> init;
+    if (!ParseExpr(init)) return false;
+    result = std::make_unique<VarDef>(decl, init);
+
+    // ;
+    TRY_LEX(lexer_, tok);
+    if (tok.kind != TOK_SEMICOL) {
+      diag_.Err(tok.loc)
+          << "Expected a ';' to denote the end of a variable definition.";
+      return false;
+    }
+
+    return true;
+  }
+
+  // {
+  // This must be a function defitnition.
+  if (tok.kind == TOK_LBRACE) {
+    // { ... }
+    std::vector<std::unique_ptr<Stmt>> stmts;
+    if (!ParseBracedStmts(stmts)) return false;
+
+    result = std::make_unique<FuncDef>(decl, stmts);
+    return true;
+  }
+
+  diag_.Err(tok.loc)
+      << "Expected a ';' to indicate a variable declaration, '=' to indicate a "
+         "variable definition, or start of a function definition.";
+  return false;
 }
 
 bool Parser::ParseTypeNode(std::unique_ptr<TypeNode> &result) {
@@ -513,6 +547,23 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
       if (!ParseExpr(rhs)) return false;
       expr = std::make_unique<BinOp>(expr, rhs, op);
       continue;
+    } else if (tok.kind == TOK_MEMBER_ACCESS) {
+      TRY_LEX(lexer_, tok);  // .
+      TRY_LEX(lexer_, tok);
+      if (tok.kind != TOK_ID) {
+        diag_.Err(tok.loc) << "Expected the name of the member to access.";
+        return false;
+      }
+
+      std::unique_ptr<Type> exprtype = expr->getType();
+      if (exprtype->getKind() != TYPE_STRUCT) {
+        diag_.Err(expr->getLoc())
+            << "Expected the expression to be a struct type.";
+        return false;
+      }
+
+      expr = std::make_unique<MemberAccess>(expr, tok.chars);
+      continue;
     } else if (tok.kind == TOK_LPAR) {
       if (!TryToMakeCallAfterExpr(expr)) return false;
       continue;
@@ -527,6 +578,12 @@ bool Parser::TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr) {
   Token tok;
   TRY_PEEK(lexer_, tok);
   if (tok.kind == TOK_LPAR) {
+    if (expr->getType()->getKind() != TYPE_FUNC) {
+      diag_.Err(tok.loc)
+          << "The expression we are calling must be a function type.";
+      return false;
+    }
+
     // Parse the start of a call expression.
     TRY_LEX(lexer_, tok);
 
@@ -582,8 +639,23 @@ bool Parser::ParseSingleExprAfterID(const Token &id_tok,
   // Parse a caller for now.
   SourceLocation exprloc = id_tok.loc;
   std::string name = id_tok.chars;
-  std::unique_ptr<ID> caller(new ID(exprloc, name));
+
+  auto *type = getContext().getType(name);
+  if (!type) {
+    diag_.Err(exprloc) << "Unknown variable '" << name << "'.";
+    return false;
+  }
+
+  std::unique_ptr<ID> caller(new ID(exprloc, name, *type));
   result = std::move(caller);
+  return true;
+}
+
+bool Parser::ParseStr(std::unique_ptr<Str> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  CHECK(tok.kind == TOK_STR, "Expected a string token to parse.");
+  result = std::make_unique<Str>(tok.loc, tok.chars);
   return true;
 }
 
@@ -599,8 +671,9 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       return true;
     }
     case TOK_STR: {
-      TRY_LEX(lexer_, tok);
-      result = std::make_unique<Str>(tok.loc, tok.chars);
+      std::unique_ptr<Str> str;
+      if (!ParseStr(str)) return false;
+      result = std::move(str);
       return true;
     }
     case TOK_ID: {

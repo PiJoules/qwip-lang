@@ -36,29 +36,27 @@ bool Compiler::CompileModule(const Module &module) {
 
 bool Compiler::CompileExternDecl(const ExternDecl &decl) {
   switch (decl.getKind()) {
-    case NODE_FUNCDEF:
-      return CompileFuncDef(decl.getAs<FuncDef>());
-    case NODE_EXTERN_VARDECL:
-      return CompileExternVarDecl(decl.getAs<ExternVarDecl>());
-
-#define EXTERN_DECL(Kind, Class)
+#define EXTERN_DECL(Kind, Class) \
+  case Kind:                     \
+    return Compile##Class(decl.getAs<Class>());
 #define NODE(Kind, Class) case Kind:
 #include "Nodes.def"
-      UNREACHABLE("Unhandled External declaration");
-      return false;
+    UNREACHABLE("Unhandled External declaration");
+    return false;
   }
-
-  std::cerr << "Can only compile function definitions for now.\n";
-  return false;
 }
 
 llvm::Type *Compiler::toLLVMType(const Type &type) {
+  llvm::Type *llvm_type = nullptr;
   switch (type.getKind()) {
-#define TYPE(Kind, Class) \
-  case Kind:              \
-    return Class##ToLLVMType(type.getAs<Class>());
+#define TYPE(Kind, Class)                               \
+  case Kind:                                            \
+    llvm_type = Class##ToLLVMType(type.getAs<Class>()); \
+    break;
 #include "Types.def"
   }
+  CHECK(llvm_type, "Unsuccessful conversion to an llvm type.");
+  return llvm_type;
 }
 
 llvm::Type *Compiler::FuncTypeToLLVMType(const FuncType &type) {
@@ -80,57 +78,120 @@ llvm::Type *Compiler::IDTypeToLLVMType(const IDType &type) {
     unsigned size = std::stoul(int_part);
     return llvm::IntegerType::get(llvm_context_, size);
   }
-  if (name == "void") {
-    return llvm::Type::getVoidTy(llvm_context_);
-  }
+  if (name == "void") return llvm::Type::getVoidTy(llvm_context_);
+  if (llvm::StructType *named_type = getLLVMModule().getTypeByName(name))
+    return named_type;
 
   std::cerr << "Unable to create an LLVM type from " << type.getName() << "\n";
   return nullptr;
+}
+
+llvm::Type *Compiler::IntTypeToLLVMType(const IntType &type) {
+  return llvm::IntegerType::get(llvm_context_, type.getNumBits());
+}
+
+llvm::Type *Compiler::StrTypeToLLVMType(const StrType &type) {
+  return llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context_),
+                              type.getSize());
+}
+
+llvm::Type *Compiler::StructTypeToLLVMType(const StructType &type) {
+  std::vector<llvm::Type *> llvm_types;
+  for (const auto &type_ptr : type.getTypes()) {
+    llvm_types.push_back(toLLVMType(*type_ptr));
+  }
+  return llvm::StructType::get(llvm_context_, llvm_types);
 }
 
 llvm::Type *Compiler::PtrTypeToLLVMType(const PtrType &type) {
   return llvm::PointerType::getUnqual(toLLVMType(type.getPointeeType()));
 }
 
-bool Compiler::CompileFuncDecl(const FuncDecl &funcdecl,
-                               llvm::Function *&result) {
-  const TypeNode &type_node = funcdecl.getTypeNode();
-  CHECK(type_node.getKind() == NODE_FUNC_TYPE, "Expected a function type node");
-  const auto &func_type_node = type_node.getAs<FuncTypeNode>();
-  auto func_type = func_type_node.toType();
-  auto *llvm_func_type = llvm::cast<llvm::FunctionType>(toLLVMType(*func_type));
-  result =
-      llvm::Function::Create(llvm_func_type, llvm::Function::ExternalLinkage,
-                             funcdecl.getName(), llvm_module_.get());
+bool Compiler::CompileVarDecl(const VarDecl &decl, llvm::IRBuilder<> &builder,
+                              llvm::Value *&result) {
+  std::unique_ptr<Type> type = decl.getType();
+  llvm::Type *llvm_type = toLLVMType(*type);
 
+  if (auto *llvm_func_type = llvm::dyn_cast<llvm::FunctionType>(llvm_type)) {
+    result =
+        llvm::Function::Create(llvm_func_type, llvm::Function::ExternalLinkage,
+                               decl.getName(), llvm_module_.get());
+  } else {
+    result = builder.CreateAlloca(llvm_type,
+                                  /*ArraySize=*/nullptr, decl.getName());
+  }
+  return true;
+}
+
+bool Compiler::CompileExternTypeDef(const ExternTypeDef &extern_typedef) {
+  llvm::IRBuilder<> builder(llvm_context_);
+  return CompileTypeDef(extern_typedef.getTypeDef(), builder);
+}
+
+bool Compiler::CompileTypeDef(const TypeDef &type_def,
+                              llvm::IRBuilder<> &builder) {
+  std::vector<llvm::Type *> llvm_types;
+  for (const auto &member_ptr : type_def.getMembers()) {
+    std::unique_ptr<Type> type;
+    switch (member_ptr->getKind()) {
+      case NODE_MEMBER_FUNCDEF: {
+        const auto &member = member_ptr->getAs<MemberFuncDef>();
+        type = member.getFuncDef().getDecl().getType();
+        break;
+      }
+      case NODE_MEMBER_VARDEF: {
+        const auto &member = member_ptr->getAs<MemberVarDef>();
+        type = member.getVarDef().getDecl().getType();
+        break;
+      }
+#define MEMBER_DECL(Kind, Class)
+#define NODE(Kind, Class) case Kind:
+#include "Nodes.def"
+        UNREACHABLE("Unexpected member decl.");
+        return false;
+    }
+    llvm_types.push_back(toLLVMType(*type));
+  }
+
+  llvm::StructType::create(llvm_context_, llvm_types, type_def.getName());
   return true;
 }
 
 bool Compiler::CompileExternVarDecl(const ExternVarDecl &extern_decl) {
-  const VarDecl &decl = extern_decl.getDecl();
-  if (decl.getKind() == NODE_FUNCDECL) {
-    llvm::Function *result;
-    return CompileFuncDecl(decl.getAs<FuncDecl>(), result);
+  const VarDecl &decl = extern_decl.getVarDecl();
+  const auto &typenode = decl.getTypeNode();
+  if (typenode.getKind() == NODE_FUNC_TYPE) {
+    llvm::IRBuilder<> builder(llvm_context_);
+    return CompileVarDecl(decl, builder);
   }
 
   std::unique_ptr<Type> type = decl.getType();
   llvm::Type *llvm_type = toLLVMType(*type);
+  return getLLVMModule().getOrInsertGlobal(
+      decl.getName(), llvm_type, [&]() -> llvm::GlobalVariable * {
+        llvm::Constant *init = llvm::Constant::getNullValue(llvm_type);
+        return new llvm::GlobalVariable(
+            getLLVMModule(), llvm_type, /*isConstant=*/true,
+            llvm::GlobalValue::ExternalLinkage, init, decl.getName());
+      });
+}
 
+bool Compiler::CompileExternVarDef(const ExternVarDef &externdef) {
+  const VarDef &def = externdef.getVarDef();
+  const VarDecl &decl = def.getDecl();
+  std::unique_ptr<Type> type = decl.getType();
+  llvm::Type *llvm_type = toLLVMType(*type);
   return getLLVMModule().getOrInsertGlobal(
       decl.getName(), llvm_type, [&]() -> llvm::GlobalVariable * {
         llvm::Constant *init;
-        if (decl.hasInit()) {
-          llvm::Value *init_val;
-          llvm::IRBuilder<> builder(llvm_context_);
-          if (!CompileExpr(decl.getInit(), builder, init_val)) return nullptr;
-          init = llvm::dyn_cast<llvm::Constant>(init_val);
-          if (!init) {
-            std::cerr
-                << "The initial value of this global is not a constant.\n";
-            return nullptr;
-          }
-        } else {
-          init = llvm::Constant::getNullValue(llvm_type);
+        llvm::Value *init_val;
+        llvm::IRBuilder<> builder(llvm_context_);
+        if (!CompileExpr(def.getInit(), builder, init_val)) return nullptr;
+
+        init = llvm::dyn_cast<llvm::Constant>(init_val);
+        if (!init) {
+          std::cerr << "The initial value of this global is not a constant.\n";
+          return nullptr;
         }
 
         return new llvm::GlobalVariable(
@@ -147,13 +208,19 @@ bool Compiler::CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
   return true;
 }
 
-bool Compiler::CompileFuncDef(const FuncDef &funcdef) {
-  llvm::Function *func;
-  if (!CompileFuncDecl(funcdef.getDecl(), func)) return false;
+bool Compiler::CompileExternFuncDef(const ExternFuncDef &extern_funcdef) {
+  llvm::IRBuilder<> builder(llvm_context_);
+  return CompileFuncDef(extern_funcdef.getFuncDef(), builder);
+}
+
+bool Compiler::CompileFuncDef(const FuncDef &funcdef, llvm::IRBuilder<> &) {
+  llvm::Value *allocation;
+  llvm::IRBuilder<> builder(llvm_context_);
+  if (!CompileVarDecl(funcdef.getDecl(), builder, allocation)) return false;
+  auto *func = llvm::cast<llvm::Function>(allocation);
 
   llvm::BasicBlock *entry_block =
       llvm::BasicBlock::Create(llvm_context_, "entry", func);
-  llvm::IRBuilder<> builder(llvm_context_);
   builder.SetInsertPoint(entry_block);
 
   // Store the arguments.
@@ -246,6 +313,16 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
     result = builder.CreateLoad(var_addr);
   }
   return true;
+}
+
+bool Compiler::CompileMemberAccess(const MemberAccess &expr,
+                                   llvm::IRBuilder<> &builder,
+                                   llvm::Value *&result) {
+  llvm::Value *base_val;
+  if (!CompileExpr(expr.getBase(), builder, base_val)) return false;
+
+  UNREACHABLE("TODO: Finish this.");
+  return false;
 }
 
 bool Compiler::CompileBinOp(const BinOp &expr, llvm::IRBuilder<> &builder,
@@ -404,16 +481,16 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
 }
 
 bool Compiler::CompileVarDecl(const VarDecl &stmt, llvm::IRBuilder<> &builder) {
-  std::unique_ptr<Type> type = stmt.getType();
-  llvm::Type *llvm_type = toLLVMType(*type);
-  llvm::Value *value_addr =
-      builder.CreateAlloca(llvm_type, /*ArraySize=*/nullptr,
-                           /*Name=*/stmt.getName());
-  if (stmt.hasInit()) {
-    llvm::Value *init;
-    if (!CompileExpr(stmt.getInit(), builder, init)) return false;
-    builder.CreateStore(init, value_addr, /*isVolatile=*/false);
-  }
+  llvm::Value *result;
+  return CompileVarDecl(stmt, builder, result);
+}
+
+bool Compiler::CompileVarDef(const VarDef &stmt, llvm::IRBuilder<> &builder) {
+  llvm::Value *value_addr;
+  if (!CompileVarDecl(stmt.getDecl(), builder, value_addr)) return false;
+  llvm::Value *init;
+  if (!CompileExpr(stmt.getInit(), builder, init)) return false;
+  builder.CreateStore(init, value_addr, /*isVolatile=*/false);
   return true;
 }
 

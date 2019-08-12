@@ -86,7 +86,7 @@ int main(int argc, char **argv) {
   Parser parser(lexer, diag);
 
   std::unique_ptr<Module> module;
-  if (!parser.ParseModule(module)) return 1;
+  if (!parser.Parse(module)) return 1;
 
   Compiler compiler(diag);
   if (!compiler.CompileModule(*module)) return 1;

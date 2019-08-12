@@ -85,16 +85,23 @@ bool Lexer::Lex(Token &result) {
     return true;
   } else if (next_char == '.') {
     // ... for variable arguments.
-    getNextChar();
-    if (getNextChar() != '.' || getNextChar() != '.') {
+    getNextChar();  // 1 .
+
+    next_char = input_.peek();
+    if (next_char != '.') {
+      result.chars = ".";
+      result.kind = TOK_MEMBER_ACCESS;
+      return true;
+    }
+    getNextChar();  // 2 ..
+
+    if (getNextChar() != '.') {  // 3 ...
       result.loc.line = line_;
       result.loc.col = col_;
       getDiag().Err(result.loc)
           << "Expected '...' to indicate variadic arguments.";
       return false;
     }
-    result.loc.line = line_;
-    result.loc.col = col_;
     result.kind = TOK_VARARG;
     result.chars = "...";
     return true;

@@ -22,9 +22,10 @@ class Compiler {
 
  private:
   bool CompileExternDecl(const ExternDecl &decl);
-  bool CompileExternVarDecl(const ExternVarDecl &decl);
-  bool CompileFuncDef(const FuncDef &funcdef);
-  bool CompileFuncDecl(const FuncDecl &funcdecl, llvm::Function *&result);
+
+#define EXTERN_DECL(Kind, Class) bool Compile##Class(const Class &extern_decl);
+#include "Nodes.def"
+
   bool CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder);
   bool CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
                     llvm::IRBuilder<> &builder);
@@ -45,6 +46,8 @@ class Compiler {
 #include "Types.def"
 
   llvm::Value *getAddrOfVariable(const std::string &name, llvm::Function *func);
+  bool CompileVarDecl(const VarDecl &decl, llvm::IRBuilder<> &builder,
+                      llvm::Value *&alloca);
 
   const Diagnostic diag_;
   llvm::LLVMContext llvm_context_;

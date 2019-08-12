@@ -41,7 +41,7 @@ def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False):
         print("Building", obj, "...")
 
         if build_asan:
-            obj = full_src + "asan.o"
+            obj = full_src + ".asan.o"
             cmd = [cpp, "-c", full_src, "-o", obj
                    ] + llvm_cpp_flags + CPPFLAGS + ["-fsanitize=address"]
             proccess = config.ProcessWrapper(

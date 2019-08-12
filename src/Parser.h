@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "Diagnostics.h"
@@ -31,6 +32,7 @@ class Type {
  public:
   virtual ~Type() {}
   virtual TypeKind getKind() const = 0;
+  virtual std::unique_ptr<Type> Clone() const = 0;
 
   template <typename T>
   const T &getAs() const {
@@ -55,11 +57,76 @@ class FuncType : public Type {
     return arg_types_;
   }
   bool isVarArg() const { return isvararg_; }
+  std::unique_ptr<Type> Clone() const override {
+    std::vector<std::unique_ptr<Type>> args;
+    for (const auto &arg_ptr : arg_types_) {
+      args.push_back(arg_ptr->Clone());
+    }
+    auto ret_type = ret_type_->Clone();
+    return std::unique_ptr<Type>(new FuncType(ret_type, args, isvararg_));
+  }
 
  private:
   std::unique_ptr<Type> ret_type_;
   std::vector<std::unique_ptr<Type>> arg_types_;
   bool isvararg_;
+};
+
+class StructType : public Type {
+ public:
+  StructType() {}
+  StructType(std::vector<std::unique_ptr<Type>> &types,
+             const std::unordered_map<std::string, unsigned> &idxs)
+      : types_(std::move(types)), idxs_(idxs) {}
+
+  TypeKind getKind() const override { return TYPE_STRUCT; }
+  std::unique_ptr<Type> Clone() const override {
+    std::vector<std::unique_ptr<Type>> types;
+    for (const auto &type_ptr : types_) {
+      types.push_back(type_ptr->Clone());
+    }
+    return std::unique_ptr<StructType>(new StructType(types, idxs_));
+  }
+
+  void addMember(const std::string &name, std::unique_ptr<Type> &type) {
+    idxs_[name] = types_.size();
+    types_.push_back(std::move(type));
+  }
+  const Type &getMember(unsigned i) const { return *(types_[i]); }
+  const Type &getMember(const std::string &name) const {
+    return getMember(idxs_.at(name));
+  }
+  const std::vector<std::unique_ptr<Type>> &getTypes() const { return types_; }
+
+ private:
+  std::vector<std::unique_ptr<Type>> types_;
+  std::unordered_map<std::string, unsigned> idxs_;
+};
+
+class StrType : public Type {
+ public:
+  StrType(unsigned size) : size_(size) {}
+  TypeKind getKind() const override { return TYPE_STR; }
+  unsigned getSize() const { return size_; }
+  std::unique_ptr<Type> Clone() const override {
+    return std::unique_ptr<Type>(new StrType(size_));
+  }
+
+ private:
+  unsigned size_;
+};
+
+class IntType : public Type {
+ public:
+  IntType(unsigned numbits) : numbits_(numbits) {}
+  TypeKind getKind() const override { return TYPE_INT; }
+  unsigned getNumBits() const { return numbits_; }
+  std::unique_ptr<Type> Clone() const override {
+    return std::unique_ptr<Type>(new IntType(numbits_));
+  }
+
+ private:
+  unsigned numbits_;
 };
 
 class IDType : public Type {
@@ -68,6 +135,9 @@ class IDType : public Type {
 
   TypeKind getKind() const override { return TYPE_ID; }
   const std::string &getName() const { return name_; }
+  std::unique_ptr<Type> Clone() const override {
+    return std::unique_ptr<Type>(new IDType(name_));
+  }
 
  private:
   std::string name_;
@@ -81,6 +151,10 @@ class PtrType : public Type {
 
   TypeKind getKind() const override { return TYPE_PTR; }
   const Type &getPointeeType() const { return *pointee_; }
+  std::unique_ptr<Type> Clone() const override {
+    auto pointee = pointee_->Clone();
+    return std::unique_ptr<Type>(new PtrType(pointee));
+  }
 
  private:
   std::unique_ptr<Type> pointee_;
@@ -104,13 +178,7 @@ class Node {
 
 class ExternDecl : public Node {
  public:
-  ExternDecl(const SourceLocation loc, const std::string &name)
-      : Node(loc), name_(name) {}
-
-  const std::string &getName() const { return name_; }
-
- private:
-  std::string name_;
+  ExternDecl(const SourceLocation loc) : Node(loc) {}
 };
 
 class Module : public Node {
@@ -133,6 +201,7 @@ class Module : public Node {
 class Expr : public Node {
  public:
   Expr(const SourceLocation loc) : Node(loc) {}
+  virtual std::unique_ptr<Type> getType() const = 0;
 };
 
 class Call : public Expr {
@@ -146,6 +215,13 @@ class Call : public Expr {
   const Expr &getCaller() const { return *caller_; }
   const std::vector<std::unique_ptr<Expr>> &getArgs() const { return args_; }
 
+  std::unique_ptr<Type> getType() const override {
+    std::unique_ptr<Type> caller_type = caller_->getType();
+    CHECK(caller_type->getKind() == TYPE_FUNC,
+          "Expected the caller to be a function type.");
+    return caller_type->getAs<FuncType>().getReturnType().Clone();
+  }
+
  private:
   std::unique_ptr<Expr> caller_;
   std::vector<std::unique_ptr<Expr>> args_;
@@ -158,6 +234,9 @@ class Str : public Expr {
 
   NodeKind getKind() const override { return NODE_STR; }
   const std::string &getVal() const { return val_; }
+  std::unique_ptr<Type> getType() const override {
+    return std::make_unique<StrType>(val_.size() + 1);
+  }
 
  private:
   std::string val_;
@@ -167,6 +246,9 @@ class Int : public Expr {
  public:
   Int(const SourceLocation loc, int i) : Expr(loc), val_(i) {}
   NodeKind getKind() const override { return NODE_INT; }
+  std::unique_ptr<Type> getType() const override {
+    return std::make_unique<IntType>(sizeof(val_));
+  }
 
   int getVal() const { return val_; }
 
@@ -176,14 +258,24 @@ class Int : public Expr {
 
 class ID : public Expr {
  public:
-  ID(const SourceLocation loc, const std::string &name)
-      : Expr(loc), name_(name) {}
+  ID(const SourceLocation loc, const std::string &name,
+     std::unique_ptr<Type> &type)
+      : Expr(loc), name_(name), type_(std::move(type)) {
+    CHECK_PTR(type_);
+  }
+  ID(const SourceLocation loc, const std::string &name, const Type &type)
+      : Expr(loc), name_(name), type_(type.Clone()) {
+    CHECK_PTR(type_);
+  }
   NodeKind getKind() const override { return NODE_ID; }
+  std::unique_ptr<Type> getType() const override { return type_->Clone(); }
 
   const std::string &getName() const { return name_; }
+  const Type &getTypeRef() const { return *type_; }
 
  private:
   std::string name_;
+  std::unique_ptr<Type> type_;
 };
 
 enum BinOpCode {
@@ -208,11 +300,44 @@ class BinOp : public Expr {
   const Expr &getLHS() const { return *lhs_; }
   const Expr &getRHS() const { return *rhs_; }
   BinOpCode getBinOp() const { return op_; }
+  std::unique_ptr<Type> getType() const override {
+    switch (op_) {
+      case BINOP_LE:
+      case BINOP_LT:
+        return std::make_unique<IntType>(/*numbits=*/32);
+      case BINOP_ADD:
+      case BINOP_SUB:
+        // TODO: The result type should depend on the types of both operands.
+        return lhs_->getType();
+    }
+  }
 
  private:
   std::unique_ptr<Expr> lhs_;
   std::unique_ptr<Expr> rhs_;
   BinOpCode op_;
+};
+
+class MemberAccess : public Expr {
+ public:
+  MemberAccess(std::unique_ptr<Expr> &base, const std::string &member)
+      : Expr(base->getLoc()), base_(std::move(base)), member_(member) {
+    CHECK_PTR(base_);
+    CHECK(base->getType()->getKind() == TYPE_STRUCT,
+          "The base should be a struct type.");
+  }
+
+  NodeKind getKind() const override { return NODE_MEMBER_ACCESS; }
+  const Expr &getBase() const { return *base_; }
+  const std::string &getMember() const { return member_; }
+  std::unique_ptr<Type> getType() const override {
+    std::unique_ptr<Type> base_type = base_->getType();
+    return base_type->getAs<StructType>().getMember(member_).Clone();
+  }
+
+ private:
+  std::unique_ptr<Expr> base_;
+  std::string member_;
 };
 
 /**
@@ -275,50 +400,57 @@ class VarDecl : public Stmt {
       : Stmt(loc), name_(name), type_(type) {
     CHECK_PTR(type_);
   }
-  VarDecl(const SourceLocation loc, const std::string &name,
-          std::unique_ptr<TypeNode> &type, std::unique_ptr<Expr> &init)
-      : Stmt(loc), name_(name), type_(std::move(type)), init_(std::move(init)) {
-    CHECK_PTR(type_);
-  }
-  VarDecl(const SourceLocation loc, const std::string &name, TypeNode *type,
-          std::unique_ptr<Expr> &init)
-      : Stmt(loc), name_(name), type_(type), init_(std::move(init)) {
-    CHECK_PTR(type_);
-  }
   NodeKind getKind() const override { return NODE_VARDECL; }
 
   const std::string &getName() const { return name_; }
   const TypeNode &getTypeNode() const { return *type_; }
   std::unique_ptr<Type> getType() const { return type_->toType(); }
-  bool hasInit() const { return bool(init_); }
-  const Expr &getInit() const {
-    CHECK(hasInit(), "This VarDecl was created without an initial value.");
-    return *init_;
-  }
 
  private:
   std::string name_;
   std::unique_ptr<TypeNode> type_;
+};
+
+class VarDef : public Stmt {
+ public:
+  VarDef(std::unique_ptr<VarDecl> &decl, std::unique_ptr<Expr> &init)
+      : Stmt(decl->getLoc()), decl_(std::move(decl)), init_(std::move(init)) {
+    CHECK_PTR(decl_);
+    CHECK_PTR(init_);
+  }
+
+  NodeKind getKind() const override { return NODE_VARDEF; }
+
+  const VarDecl &getDecl() const { return *decl_; }
+  const Expr &getInit() const { return *init_; }
+
+ private:
+  std::unique_ptr<VarDecl> decl_;
   std::unique_ptr<Expr> init_;
+};
+
+class MemberDecl : public Node {
+ public:
+  MemberDecl(const SourceLocation loc) : Node(loc) {}
 };
 
 class TypeDef : public Stmt {
  public:
   TypeDef(const SourceLocation loc, const std::string &name,
-          const std::vector<std::unique_ptr<VarDecl>> &members)
-    : Stmt(loc), name_(name), members_(std::move(members)) {
-      CHECK_PTRS(members_);
-    }
+          std::vector<std::unique_ptr<MemberDecl>> &members)
+      : Stmt(loc), name_(name), members_(std::move(members)) {
+    CHECK_PTRS(members_);
+  }
 
   NodeKind getKind() const override { return NODE_TYPEDEF; }
   const std::string &getName() const { return name_; }
-  const std::vector<std::unique_ptr<VarDecl>> &getMembers() const {
+  const std::vector<std::unique_ptr<MemberDecl>> &getMembers() const {
     return members_;
   }
 
  private:
   std::string name_;
-  std::vector<std::unique_ptr<VarDecl>> members_;
+  std::vector<std::unique_ptr<MemberDecl>> members_;
 };
 
 class Param : public Node {
@@ -374,18 +506,6 @@ class FuncTypeNode : public TypeNode {
   std::unique_ptr<TypeNode> ret_type_;
   std::vector<std::unique_ptr<Param>> params_;
   bool isvararg_;
-};
-
-/**
- * <ID> : <FuncTypeNode>
- */
-class FuncDecl : public VarDecl {
- public:
-  FuncDecl(const SourceLocation loc, const std::string &name,
-           std::unique_ptr<FuncTypeNode> &func_type)
-      : VarDecl(loc, name, func_type.release()) {}
-
-  NodeKind getKind() const override { return NODE_FUNCDECL; }
 };
 
 /**
@@ -475,56 +595,22 @@ class While : public Stmt {
   std::vector<std::unique_ptr<Stmt>> body_;
 };
 
-class ExternVarDecl : public ExternDecl {
+class FuncDef : public Stmt {
  public:
-  ExternVarDecl(std::unique_ptr<VarDecl> &decl)
-      : ExternDecl(decl->getLoc(), decl->getName()), decl_(std::move(decl)) {
-    CHECK_PTR(decl_);
-  }
-  ExternVarDecl(VarDecl *decl)
-      : ExternDecl(decl->getLoc(), decl->getName()), decl_(decl) {
-    CHECK_PTR(decl_);
-  }
-
-  NodeKind getKind() const override { return NODE_EXTERN_VARDECL; }
-
-  const VarDecl &getDecl() const { return *decl_; }
-
- private:
-  std::unique_ptr<VarDecl> decl_;
-};
-
-class ExternTypeDef : public ExternDecl {
- public:
-  ExternTypeDef(std::unique_ptr<TypeDef> &type_def)
-    : ExternDecl(type_def->getLoc(), type_def->getName()),
-      type_def_(std::move(type_def)) {
-    CHECK_PTR(type_def_);
-  }
-
-  NodeKind getKind() const override { return NODE_EXTERN_FUNCDEF; }
-  const TypeDef &getTypeDef() const { return *type_def_; }
-
- private:
-  std::unique_ptr<TypeDef> type_def_;
-};
-
-class FuncDef : public ExternDecl {
- public:
-  FuncDef(std::unique_ptr<FuncDecl> &decl,
+  FuncDef(std::unique_ptr<VarDecl> &decl,
           std::vector<std::unique_ptr<Stmt>> &stmts)
-      : ExternDecl(decl->getLoc(), decl->getName()),
-        decl_(std::move(decl)),
-        stmts_(std::move(stmts)) {
+      : Stmt(decl->getLoc()), decl_(std::move(decl)), stmts_(std::move(stmts)) {
     CHECK_PTR(decl_);
     CHECK_PTRS(stmts_);
+    CHECK(decl_->getTypeNode().getKind() == NODE_FUNC_TYPE,
+          "A FuncDef node can only accept a VarDecl that is a function type.");
   }
   NodeKind getKind() const override { return NODE_FUNCDEF; }
-  const FuncDecl &getDecl() const { return *decl_; }
+  const VarDecl &getDecl() const { return *decl_; }
   const std::vector<std::unique_ptr<Stmt>> &getStmts() const { return stmts_; }
 
  private:
-  std::unique_ptr<FuncDecl> decl_;
+  std::unique_ptr<VarDecl> decl_;
   std::vector<std::unique_ptr<Stmt>> stmts_;
 };
 
@@ -542,44 +628,99 @@ class Return : public Stmt {
   std::unique_ptr<Expr> expr_;
 };
 
+// A special convenience macro for defining a node class that's just meant to
+// hold an instance of another class.
+#define DEFINE_WRAPPER_NODE(Class, Kind, Parent, InnerClass)      \
+  class Class : public Parent {                                   \
+   public:                                                        \
+    Class(std::unique_ptr<InnerClass> &inner)                     \
+        : Parent(inner->getLoc()), inner_(std::move(inner)) {     \
+      CHECK_PTR(inner_);                                          \
+    }                                                             \
+    NodeKind getKind() const override { return Kind; }            \
+    const InnerClass &get##InnerClass() const { return *inner_; } \
+                                                                  \
+   private:                                                       \
+    std::unique_ptr<InnerClass> inner_;                           \
+  };
+
+DEFINE_WRAPPER_NODE(ExternVarDecl, NODE_EXTERN_VARDECL, ExternDecl, VarDecl)
+DEFINE_WRAPPER_NODE(ExternVarDef, NODE_EXTERN_VARDEF, ExternDecl, VarDef)
+DEFINE_WRAPPER_NODE(ExternTypeDef, NODE_EXTERN_TYPEDEF, ExternDecl, TypeDef)
+DEFINE_WRAPPER_NODE(ExternFuncDef, NODE_EXTERN_FUNCDEF, ExternDecl, FuncDef)
+DEFINE_WRAPPER_NODE(MemberVarDef, NODE_MEMBER_VARDEF, MemberDecl, VarDef)
+DEFINE_WRAPPER_NODE(MemberFuncDef, NODE_MEMBER_FUNCDEF, MemberDecl, FuncDef)
+
+typedef std::unordered_map<std::string, std::unique_ptr<Type>> TypeMap;
+
+class Context {
+ public:
+  Context() {}
+
+  const TypeMap &getTypes() const { return types_; }
+  void addType(const std::string &varname, const Type &type) {
+    types_[varname] = type.Clone();
+  }
+  const Type *getType(const std::string &varname) const {
+    auto foundtype = types_.find(varname);
+    if (foundtype != types_.end()) return foundtype->second.get();
+    if (!parent_) return nullptr;
+    return parent_->getType(varname);
+  }
+  void setParent(Context &parent) { parent_ = &parent; }
+
+ private:
+  TypeMap types_;
+  Context *parent_ = nullptr;
+};
+
 class Parser {
  public:
   Parser(Lexer &lexer) : lexer_(lexer) {}
   Parser(Lexer &lexer, const Diagnostic &diag) : lexer_(lexer), diag_(diag) {}
 
-  bool ParseModule(std::unique_ptr<Module> &result);
+  bool Parse(std::unique_ptr<Module> &result);
 
  private:
-  bool ParseExternDecl(std::unique_ptr<ExternDecl> &result);
-  bool ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result);
   bool ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts);
-  bool ParseStmt(std::unique_ptr<Stmt> &stmt);
-  bool ParseReturn(std::unique_ptr<Return> &result);
-  bool ParseIf(std::unique_ptr<If> &result);
-  bool ParseWhile(std::unique_ptr<While> &result);
-  bool ParseExpr(std::unique_ptr<Expr> &expr);
-  bool ParseSingleExpr(std::unique_ptr<Expr> &result);
   bool ParseTypeNode(std::unique_ptr<TypeNode> &result);
-  bool ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result);
-  bool ParseParam(std::unique_ptr<Param> &result);
-  bool ParseTypeDef(std::unique_ptr<TypeDef> &result);
+  bool ParseSingleExpr(std::unique_ptr<Expr> &result);
+  bool ParseStmt(std::unique_ptr<Stmt> &result);
+  bool ParseExpr(std::unique_ptr<Expr> &result);
 
-  // Parse nodes, but already having lexed one ID token from the lexer.
-  bool ParseVarDeclAfterID(const Token &id_tok,
-                           std::unique_ptr<VarDecl> &result);
+#define NODE(Kind, Class) bool Parse##Class(std::unique_ptr<Class> &node);
+#include "Nodes.def"
+
   bool ParseExprAfterID(const Token &id_tok, std::unique_ptr<Expr> &result);
   bool ParseSingleExprAfterID(const Token &id_tok,
                               std::unique_ptr<Expr> &result);
+  bool ParseNamedDeclOrDefAfterID(const Token &id_tok,
+                                  std::unique_ptr<Stmt> &result);
+  bool ParseNamedDeclOrDef(std::unique_ptr<Stmt> &result);
+  bool ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result);
 
   // Attempt to parse a call given an expression. If we are able to make a call
   // but run into an error parsing it, we return false. Otherwise, return true.
   bool TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr);
   bool TryToParseCompoundExpr(std::unique_ptr<Expr> &expr);
 
+  Context &getContext() {
+    CHECK(!contexts_.empty(),
+          "We have not parsed a module yet if there are no contexts on the "
+          "stack.");
+    return contexts_.back();
+  }
+  void EnterScope() {
+    Context newcontext;
+    newcontext.setParent(contexts_.back());
+    contexts_.push_back(std::move(newcontext));
+  }
+  void ExitScope() { contexts_.pop_back(); }
   const Diagnostic &getDiag() const { return diag_; }
 
   Lexer &lexer_;
   const Diagnostic diag_;
+  std::vector<Context> contexts_;
 };
 
 }  // namespace qwip
