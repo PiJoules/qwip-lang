@@ -15,7 +15,8 @@ CPPFLAGS = [
 ]
 
 
-def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False):
+def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False,
+          extra_linker_args=""):
     """Build qwip."""
     llvm_cpp_flags = shlex.split(
         subprocess.check_output([llvm_config, "--cxxflags"]))
@@ -55,13 +56,14 @@ def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False):
             return False
 
     # Now link
+    extra_linker_args = shlex.split(extra_linker_args)
     link_qwip = config.ProcessWrapper(
         descriptor="Linking qwip",
-        cmd=[cpp, "-o", "qwip"] + objs + llvm_linker_flags)
+        cmd=[cpp, "-o", "qwip"] + objs + llvm_linker_flags + extra_linker_args)
     if build_asan:
         link_qwip_asan = config.ProcessWrapper(
             descriptor="Linking qwip-asan",
-            cmd=[cpp, "-o", "qwip-asan"] + objs + llvm_linker_flags +
+            cmd=[cpp, "-o", "qwip-asan"] + objs + llvm_linker_flags + extra_linker_args +
             ["-fsanitize=address"])
 
     print("Linking qwip ...")
@@ -91,6 +93,11 @@ def parse_args():
         "--build-asan",
         action="store_true",
         help="Build an executable that is also address sanitized.")
+    parser.add_argument(
+        "--extra-linker-args",
+        type=str,
+        default="",
+        help="Extra arguments to pass when linking.")
     return parser.parse_args()
 
 

@@ -1,15 +1,21 @@
 printf: (fmt: i8*, ...) -> void;
 
 type A: {
-  method: (x: i32) -> i32 {
-    ret x + 1;
-  }
-
-  y: i32 = 7;
+  method: (x: i32) -> i32;
+  y: i32;
 }
+
+func: (x: i32) -> i32 {
+  ret x + 1;
+}
+
+y: i32 = 7;
 
 main: () -> i32 {
   a: A;
+  a.y = y;
+  a.method = func;
   printf("%d\n", a.y);
+  printf("%d\n", a.method(2));
   ret 0;
 }

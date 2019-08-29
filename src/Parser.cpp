@@ -9,6 +9,24 @@
 
 namespace qwip {
 
+std::string TypeKindToString(TypeKind kind) {
+  switch (kind) {
+#define TYPE(Kind, Class) \
+  case Kind:              \
+    return STR(Kind);
+#include "Types.def"
+  }
+}
+
+std::string NodeKindToString(NodeKind kind) {
+  switch (kind) {
+#define NODE(Kind, Class) \
+  case Kind:              \
+    return STR(Kind);
+#include "Nodes.def"
+  }
+}
+
 bool Parser::Parse(std::unique_ptr<Module> &result) {
   return ParseModule(result);
 }
@@ -37,6 +55,7 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
 
     TRY_PEEK(lexer_, lookahead);
   }
+  ExitScope();
 
   SourceLocation loc;
   loc.line = 1;
@@ -54,13 +73,12 @@ bool Parser::ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result) {
     std::unique_ptr<FuncDef> funcdef(static_cast<FuncDef *>(func.release()));
     result = std::make_unique<ExternFuncDef>(funcdef);
   } else if (func->getKind() == NODE_VARDEF) {
-    std::unique_ptr<VarDef> vardecl(static_cast<VarDef *>(func.release()));
-    result = std::make_unique<ExternVarDef>(vardecl);
+    std::unique_ptr<VarDef> vardef(static_cast<VarDef *>(func.release()));
+    result = std::make_unique<ExternVarDef>(vardef);
   } else {
     std::unique_ptr<VarDecl> vardecl(static_cast<VarDecl *>(func.release()));
     result = std::make_unique<ExternVarDecl>(vardecl);
   }
-
   return true;
 }
 
@@ -110,17 +128,13 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
     // Consume and read statements.
     std::unique_ptr<Stmt> nameddecl;
     if (!ParseNamedDeclOrDef(nameddecl)) return false;
-    if (nameddecl->getKind() == NODE_VARDEF) {
-      std::unique_ptr<VarDef> vardef(
-          static_cast<VarDef *>(nameddecl.release()));
-      members.push_back(std::make_unique<MemberVarDef>(vardef));
-    } else if (nameddecl->getKind() == NODE_FUNCDEF) {
-      std::unique_ptr<FuncDef> funcdef(
-          static_cast<FuncDef *>(nameddecl.release()));
-      members.push_back(std::make_unique<MemberFuncDef>(funcdef));
+    if (nameddecl->getKind() == NODE_VARDECL) {
+      std::unique_ptr<VarDecl> vardecl(
+          static_cast<VarDecl *>(nameddecl.release()));
+      members.push_back(std::make_unique<MemberVarDecl>(vardecl));
     } else {
       diag_.Err(nameddecl->getLoc())
-          << "A new struct can only contain definitions.";
+          << "A new struct can only contain declarations.";
       return false;
     }
   }
@@ -132,8 +146,30 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
         "brace.");
 
   auto type_def = std::make_unique<TypeDef>(typeloc, name, members);
+  StructType type = type_def->getStructType();
+  getContext().addType(name, type);
   result = std::make_unique<ExternTypeDef>(type_def);
   return true;
+}
+
+bool Parser::EnterScopeAndParseBracedStmts(
+    std::vector<std::unique_ptr<Stmt>> &stmts) {
+  EnterScope();
+  bool success = ParseBracedStmts(stmts);
+  ExitScope();
+  return success;
+}
+
+bool Parser::EnterScopeAndParseFuncBracedStmts(
+    const FuncTypeNode &functype, std::vector<std::unique_ptr<Stmt>> &stmts) {
+  EnterScope();
+  for (const auto &param_ptr : functype.getParams()) {
+    auto type = param_ptr->getTypeNode().toType();
+    getContext().addVar(param_ptr->getName(), *type);
+  }
+  bool success = ParseBracedStmts(stmts);
+  ExitScope();
+  return success;
 }
 
 bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
@@ -143,8 +179,6 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
   CHECK(tok.kind == TOK_LBRACE,
         "Do not call ParseBracedStmts unless the previous lookahead was an "
         "opening brace.");
-
-  EnterScope();
 
   // Statements
   while (1) {
@@ -156,7 +190,6 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
     // Consume and read statements.
     std::unique_ptr<Stmt> stmt;
     if (!ParseStmt(stmt)) {
-      ExitScope();
       return false;
     }
     stmts.push_back(std::move(stmt));
@@ -168,7 +201,6 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
         "Should only break out of the previous loop if we ran into a closing "
         "brace.");
 
-  ExitScope();
   return true;
 }
 
@@ -208,6 +240,7 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     if (!ParseExprAfterID(id_tok, expr)) return false;
 
     // If the next token is a =, then this is an assignment to an expression.
+    TRY_PEEK(lexer_, lookahead);
     if (lookahead.kind == TOK_ASSIGN) {
       TRY_LEX(lexer_, tok);
       CHECK(tok.kind == TOK_ASSIGN,
@@ -222,7 +255,8 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
       // Otherwise it has to be a call stmt.
       if (expr->getKind() != NODE_CALL) {
         diag_.Err(expr->getLoc())
-            << "Expressions that form statements can only be call expressions.";
+            << "Expressions that form statements can only be call expressions. "
+            << "Found " << NodeKindToString(expr->getKind()) << ".";
         return false;
       }
       std::unique_ptr<Call> call(static_cast<Call *>(expr.release()));
@@ -277,7 +311,7 @@ bool Parser::ParseWhile(std::unique_ptr<While> &result) {
 
   // { ... }
   std::vector<std::unique_ptr<Stmt>> stmts;
-  if (!ParseBracedStmts(stmts)) return false;
+  if (!EnterScopeAndParseBracedStmts(stmts)) return false;
 
   result = std::make_unique<While>(whileloc, cond, stmts);
   return true;
@@ -294,7 +328,7 @@ bool Parser::ParseIf(std::unique_ptr<If> &result) {
 
   // { ... }
   std::vector<std::unique_ptr<Stmt>> stmts;
-  if (!ParseBracedStmts(stmts)) return false;
+  if (!EnterScopeAndParseBracedStmts(stmts)) return false;
 
   TRY_PEEK(lexer_, tok);
   if (tok.kind != TOK_ELSE) {
@@ -308,7 +342,7 @@ bool Parser::ParseIf(std::unique_ptr<If> &result) {
 
   // { ... }
   std::vector<std::unique_ptr<Stmt>> else_stmts;
-  if (!ParseBracedStmts(stmts)) return false;
+  if (!EnterScopeAndParseBracedStmts(stmts)) return false;
 
   result = std::make_unique<If>(ifloc, cond, stmts, else_stmts);
   return true;
@@ -353,9 +387,14 @@ bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
     return false;
   }
 
-  std::unique_ptr<TypeNode> type;
-  if (!ParseTypeNode(type)) return false;
-  auto decl = std::make_unique<VarDecl>(loc, name, type);
+  std::unique_ptr<TypeNode> type_node;
+  if (!ParseTypeNode(type_node)) return false;
+
+  // Even if we fail here, it is fine since we don't reuse the context.
+  std::unique_ptr<Type> type = type_node->toType();
+  getContext().addVar(name, *type);
+
+  auto decl = std::make_unique<VarDecl>(loc, name, type_node);
 
   // ;
   TRY_PEEK(lexer_, tok);
@@ -386,9 +425,16 @@ bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
   // {
   // This must be a function defitnition.
   if (tok.kind == TOK_LBRACE) {
+    if (decl->getTypeNode().getKind() != NODE_FUNC_TYPE) {
+      diag_.Err(decl->getLoc())
+          << "Expected the definition to be attached to a function type.";
+      return false;
+    }
+    const FuncTypeNode &functype = decl->getTypeNode().getAs<FuncTypeNode>();
+
     // { ... }
     std::vector<std::unique_ptr<Stmt>> stmts;
-    if (!ParseBracedStmts(stmts)) return false;
+    if (!EnterScopeAndParseFuncBracedStmts(functype, stmts)) return false;
 
     result = std::make_unique<FuncDef>(decl, stmts);
     return true;
@@ -556,9 +602,11 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
       }
 
       std::unique_ptr<Type> exprtype = expr->getType();
+
       if (exprtype->getKind() != TYPE_STRUCT) {
         diag_.Err(expr->getLoc())
-            << "Expected the expression to be a struct type.";
+            << "Expected the expression to be a struct type. Found '"
+            << TypeKindToString(exprtype->getKind()) << "'";
         return false;
       }
 
@@ -572,6 +620,20 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
   }
 
   return true;
+}
+
+StructType TypeDef::getStructType() const {
+  StructType structtype;
+  for (const auto &member_ptr : members_) {
+    if (member_ptr->getKind() == NODE_MEMBER_VARDECL) {
+      const VarDecl &vardecl = member_ptr->getAs<MemberVarDecl>().getVarDecl();
+      auto type = vardecl.getType();
+      structtype.addMember(vardecl.getName(), type);
+    } else {
+      UNREACHABLE("Unexpected member decl.");
+    }
+  }
+  return structtype;
 }
 
 bool Parser::TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr) {
@@ -640,7 +702,7 @@ bool Parser::ParseSingleExprAfterID(const Token &id_tok,
   SourceLocation exprloc = id_tok.loc;
   std::string name = id_tok.chars;
 
-  auto *type = getContext().getType(name);
+  auto *type = getTypeForVar(name);
   if (!type) {
     diag_.Err(exprloc) << "Unknown variable '" << name << "'.";
     return false;

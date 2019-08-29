@@ -89,7 +89,10 @@ def run_in_parallel():
 
 def run_tests(**kwargs):
     """Build and run tests."""
-    return (build_in_parallel(**kwargs) and run_in_parallel())
+    if not build_in_parallel(**kwargs):
+      return False
+    print("--------------")
+    return run_in_parallel()
 
 
 def parse_args():

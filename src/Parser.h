@@ -28,6 +28,9 @@ enum TypeKind {
 #include "Types.def"
 };
 
+std::string TypeKindToString(TypeKind kind);
+std::string NodeKindToString(NodeKind kind);
+
 class Type {
  public:
   virtual ~Type() {}
@@ -96,6 +99,7 @@ class StructType : public Type {
   const Type &getMember(const std::string &name) const {
     return getMember(idxs_.at(name));
   }
+  unsigned getIndex(const std::string &name) const { return idxs_.at(name); }
   const std::vector<std::unique_ptr<Type>> &getTypes() const { return types_; }
 
  private:
@@ -323,7 +327,7 @@ class MemberAccess : public Expr {
   MemberAccess(std::unique_ptr<Expr> &base, const std::string &member)
       : Expr(base->getLoc()), base_(std::move(base)), member_(member) {
     CHECK_PTR(base_);
-    CHECK(base->getType()->getKind() == TYPE_STRUCT,
+    CHECK(base_->getType()->getKind() == TYPE_STRUCT,
           "The base should be a struct type.");
   }
 
@@ -447,6 +451,8 @@ class TypeDef : public Stmt {
   const std::vector<std::unique_ptr<MemberDecl>> &getMembers() const {
     return members_;
   }
+
+  StructType getStructType() const;
 
  private:
   std::string name_;
@@ -648,30 +654,38 @@ DEFINE_WRAPPER_NODE(ExternVarDecl, NODE_EXTERN_VARDECL, ExternDecl, VarDecl)
 DEFINE_WRAPPER_NODE(ExternVarDef, NODE_EXTERN_VARDEF, ExternDecl, VarDef)
 DEFINE_WRAPPER_NODE(ExternTypeDef, NODE_EXTERN_TYPEDEF, ExternDecl, TypeDef)
 DEFINE_WRAPPER_NODE(ExternFuncDef, NODE_EXTERN_FUNCDEF, ExternDecl, FuncDef)
-DEFINE_WRAPPER_NODE(MemberVarDef, NODE_MEMBER_VARDEF, MemberDecl, VarDef)
-DEFINE_WRAPPER_NODE(MemberFuncDef, NODE_MEMBER_FUNCDEF, MemberDecl, FuncDef)
+DEFINE_WRAPPER_NODE(MemberVarDecl, NODE_MEMBER_VARDECL, MemberDecl, VarDecl)
 
 typedef std::unordered_map<std::string, std::unique_ptr<Type>> TypeMap;
+typedef std::unordered_map<std::string, std::unique_ptr<Type>> VarMap;
 
 class Context {
  public:
   Context() {}
 
   const TypeMap &getTypes() const { return types_; }
-  void addType(const std::string &varname, const Type &type) {
-    types_[varname] = type.Clone();
+  void addType(const std::string &type_name, const Type &type) {
+    types_[type_name] = type.Clone();
   }
-  const Type *getType(const std::string &varname) const {
-    auto foundtype = types_.find(varname);
+  const Type *getType(const std::string &type_name) const {
+    auto foundtype = types_.find(type_name);
     if (foundtype != types_.end()) return foundtype->second.get();
-    if (!parent_) return nullptr;
-    return parent_->getType(varname);
+    return nullptr;
   }
-  void setParent(Context &parent) { parent_ = &parent; }
+
+  const TypeMap &getVars() const { return vars_; }
+  void addVar(const std::string &varname, const Type &type) {
+    vars_[varname] = type.Clone();
+  }
+  const Type *getVarType(const std::string &varname) const {
+    auto foundtype = vars_.find(varname);
+    if (foundtype != vars_.end()) return foundtype->second.get();
+    return nullptr;
+  }
 
  private:
   TypeMap types_;
-  Context *parent_ = nullptr;
+  VarMap vars_;
 };
 
 class Parser {
@@ -683,6 +697,9 @@ class Parser {
 
  private:
   bool ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts);
+  bool EnterScopeAndParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts);
+  bool EnterScopeAndParseFuncBracedStmts(
+      const FuncTypeNode &functype, std::vector<std::unique_ptr<Stmt>> &stmts);
   bool ParseTypeNode(std::unique_ptr<TypeNode> &result);
   bool ParseSingleExpr(std::unique_ptr<Expr> &result);
   bool ParseStmt(std::unique_ptr<Stmt> &result);
@@ -710,11 +727,29 @@ class Parser {
           "stack.");
     return contexts_.back();
   }
-  void EnterScope() {
-    Context newcontext;
-    newcontext.setParent(contexts_.back());
-    contexts_.push_back(std::move(newcontext));
+  const Type *getTypeForVar(const std::string &name) const {
+    for (unsigned i = 0; i < contexts_.size(); ++i) {
+      if (const Type *type =
+              contexts_.at(contexts_.size() - i - 1).getVarType(name)) {
+        // Resolve the type node if it is a typedef.
+        if (type->getKind() == TYPE_ID) {
+          if (const Type *canon_type = getType(type->getAs<IDType>().getName()))
+            return canon_type;
+        }
+        return type;
+      }
+    }
+    return nullptr;
   }
+  const Type *getType(const std::string &name) const {
+    for (unsigned i = 0; i < contexts_.size(); ++i) {
+      if (const Type *type =
+              contexts_.at(contexts_.size() - i - 1).getType(name))
+        return type;
+    }
+    return nullptr;
+  }
+  void EnterScope() { contexts_.emplace_back(); }
   void ExitScope() { contexts_.pop_back(); }
   const Diagnostic &getDiag() const { return diag_; }
 

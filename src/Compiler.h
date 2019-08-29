@@ -33,7 +33,6 @@ class Compiler {
   bool Compile##Class(const Class &stmt, llvm::IRBuilder<> &builder);
 #include "Nodes.def"
 
-  // TODO: Add the dispatch for expressions similar to stmts.
   bool CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
                    llvm::Value *&result);
 #define EXPR(Kind, Class)                                            \
@@ -46,6 +45,8 @@ class Compiler {
 #include "Types.def"
 
   llvm::Value *getAddrOfVariable(const std::string &name, llvm::Function *func);
+  llvm::Value *getAddrOfMemberAccess(const MemberAccess &expr,
+                                     llvm::IRBuilder<> &builder);
   bool CompileVarDecl(const VarDecl &decl, llvm::IRBuilder<> &builder,
                       llvm::Value *&alloca);
 

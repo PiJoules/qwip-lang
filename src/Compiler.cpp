@@ -134,14 +134,14 @@ bool Compiler::CompileTypeDef(const TypeDef &type_def,
   for (const auto &member_ptr : type_def.getMembers()) {
     std::unique_ptr<Type> type;
     switch (member_ptr->getKind()) {
-      case NODE_MEMBER_FUNCDEF: {
-        const auto &member = member_ptr->getAs<MemberFuncDef>();
-        type = member.getFuncDef().getDecl().getType();
-        break;
-      }
-      case NODE_MEMBER_VARDEF: {
-        const auto &member = member_ptr->getAs<MemberVarDef>();
-        type = member.getVarDef().getDecl().getType();
+      case NODE_MEMBER_VARDECL: {
+        const auto &member = member_ptr->getAs<MemberVarDecl>();
+        type = member.getVarDecl().getType();
+        if (type->getKind() == TYPE_FUNC) {
+          llvm_types.push_back(llvm::PointerType::getUnqual(toLLVMType(*type)));
+        } else {
+          llvm_types.push_back(toLLVMType(*type));
+        }
         break;
       }
 #define MEMBER_DECL(Kind, Class)
@@ -150,7 +150,6 @@ bool Compiler::CompileTypeDef(const TypeDef &type_def,
         UNREACHABLE("Unexpected member decl.");
         return false;
     }
-    llvm_types.push_back(toLLVMType(*type));
   }
 
   llvm::StructType::create(llvm_context_, llvm_types, type_def.getName());
@@ -315,14 +314,35 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
+llvm::Value *Compiler::getAddrOfMemberAccess(const MemberAccess &expr,
+                                             llvm::IRBuilder<> &builder) {
+  llvm::Value *base_val;
+  if (!CompileExpr(expr.getBase(), builder, base_val)) return nullptr;
+
+  // If the base is an ID, it will be loaded as a value when we want it's
+  // address. If it is a LoadInst, we can just get the pointer operand.
+  if (auto *load = llvm::dyn_cast<llvm::LoadInst>(base_val))
+    base_val = load->getPointerOperand();
+
+  const Expr &base = expr.getBase();
+  std::unique_ptr<Type> base_type = base.getType();
+
+  // The base is guaranteed to be a StructType.
+  const auto &struct_type = base_type->getAs<StructType>();
+
+  auto *i32ty = llvm::Type::getInt32Ty(llvm_context_);
+  auto *zero = llvm::Constant::getNullValue(i32ty);
+  auto idx =
+      llvm::ConstantInt::get(i32ty, struct_type.getIndex(expr.getMember()));
+  return builder.CreateInBoundsGEP(base_val, {zero, idx});
+}
+
 bool Compiler::CompileMemberAccess(const MemberAccess &expr,
                                    llvm::IRBuilder<> &builder,
                                    llvm::Value *&result) {
-  llvm::Value *base_val;
-  if (!CompileExpr(expr.getBase(), builder, base_val)) return false;
-
-  UNREACHABLE("TODO: Finish this.");
-  return false;
+  if (!(result = getAddrOfMemberAccess(expr, builder))) return false;
+  result = builder.CreateLoad(result);
+  return true;
 }
 
 bool Compiler::CompileBinOp(const BinOp &expr, llvm::IRBuilder<> &builder,
@@ -466,6 +486,11 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
       const auto &id_expr = stmt.getLHS().getAs<ID>();
       value_addr = getAddrOfVariable(id_expr.getName(),
                                      builder.GetInsertBlock()->getParent());
+      break;
+    }
+    case NODE_MEMBER_ACCESS: {
+      const auto &member = stmt.getLHS().getAs<MemberAccess>();
+      if (!(value_addr = getAddrOfMemberAccess(member, builder))) return false;
       break;
     }
 #define ASSIGNABLE(Kind, Class)
