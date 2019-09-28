@@ -7,6 +7,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
@@ -519,8 +520,8 @@ bool Compiler::CompileVarDef(const VarDef &stmt, llvm::IRBuilder<> &builder) {
   return true;
 }
 
-bool Compiler::SaveToExecutable(const std::string &input_filename,
-                                const std::string &output_filename) {
+bool Compiler::SaveToExecutable(const std::string &input_filepath,
+                                const std::string &output_filepath) {
   llvm::InitializeAllTargetInfos();
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -533,7 +534,8 @@ bool Compiler::SaveToExecutable(const std::string &input_filename,
   const llvm::Target *Target =
       llvm::TargetRegistry::lookupTarget(TargetTriple, err);
   if (!Target) {
-    std::cerr << "Failed to lookup target " + TargetTriple + ": " + err;
+    std::cerr << "Failed to lookup target " << TargetTriple << ": " << err
+              << "\n";
     return false;
   }
 
@@ -546,10 +548,22 @@ bool Compiler::SaveToExecutable(const std::string &input_filename,
   llvm_module_->setDataLayout(TheTargetMachine->createDataLayout());
 
   std::error_code err_code;
-  std::string object_filename = input_filename + ".o";
+  llvm::SmallString<128> working_dir;
+  err_code = llvm::sys::fs::createUniqueDirectory("qwip-output", working_dir);
+  if (err_code) {
+    std::cerr
+        << "Could not create a working directory to store temporary files: "
+        << err_code.message() << "\n";
+    return false;
+  }
+
+  std::string input_filename = llvm::sys::path::filename(input_filepath);
+  llvm::SmallString<128> object_filename(working_dir);
+  llvm::sys::path::append(object_filename, input_filename + ".o");
   llvm::raw_fd_ostream dest(object_filename, err_code, llvm::sys::fs::F_None);
   if (err_code) {
-    std::cerr << "Could not open file: " << err_code.message();
+    std::cerr << "Could not open file (" << object_filename.c_str()
+              << "): " << err_code.message() << "\n";
     return false;
   }
 
@@ -574,7 +588,7 @@ bool Compiler::SaveToExecutable(const std::string &input_filename,
   args.push_back(cc_binary.c_str());
   args.push_back(object_filename.c_str());
   args.push_back("-o");
-  args.push_back(output_filename.c_str());
+  args.push_back(output_filepath.c_str());
   args.push_back(nullptr);
   std::string err_msg;
 

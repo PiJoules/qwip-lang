@@ -16,10 +16,14 @@ def find_exe(exe):
     return os.path.abspath(exe)
 
 
-def build_in_parallel(use_valgrind=False, use_asan=False):
+def build_in_parallel(**kwargs):
     """Build tests in parallel."""
+    use_valgrind = kwargs["use_valgrind"]
+    use_asan = kwargs["use_asan"]
+    working_dir = kwargs["change_dir"]
+
     print("Building tests...")
-    qwip = find_exe("qwip")
+    qwip = config.abs_join_path(working_dir, "qwip")
     if not qwip:
         print("Could not find the qwip executable! Be sure to build it first "
               "before running tests.")
@@ -30,12 +34,12 @@ def build_in_parallel(use_valgrind=False, use_asan=False):
         valgrind_path = find_exe("valgrind")
         if valgrind_path:
             exe = [valgrind_path, "--leak-check=full", "--error-exitcode=1"
-                   ] + exe
+                  ] + exe
         else:
             print("Warning: Unable to find valgrind. Continuing to build "
                   "without it.")
     elif use_asan:
-        qwip_asan = find_exe("qwip-asan")
+        qwip_asan = config.abs_join_path(working_dir, "qwip-asan")
         if not qwip_asan:
             print("Could not find the sanitized qwip executable! Be sure to "
                   "build it first before running tests.")
@@ -44,26 +48,20 @@ def build_in_parallel(use_valgrind=False, use_asan=False):
 
     processes = []
     for test in config.TESTS:
-        test_file = config.get_example(test)
-        out_file = test_file + ".out"
+        out_file = config.abs_join_path(working_dir, test + ".out")
         test_stdout = config.get_tmp_file(test + ".stdout")
         test_stderr = config.get_tmp_file(test + ".stderr")
-        cmd = exe + [
-            test_file,
-            "-o",
-            out_file,
-        ]
+        cmd = config.QWIPCompilerCmdLineArgs(
+            compiler=exe, srcs=[config.get_example(test)], out=out_file)
         process = config.ProcessWrapper(
             descriptor="Building " + test,
-            cmd=cmd,
+            cmd=cmd.getcmd(),
             stdout=test_stdout,
             stderr=test_stderr)
         processes.append(process)
 
     for process in processes:
-        if process.passed():
-            print("PASS:", process.descriptor)
-        else:
+        if not process.passed():
             print("FAIL:", process.descriptor)
             print("Error code {}. See {} and {} for debugging.".format(
                 process.returncode(), process.stdout, process.stderr))
@@ -72,10 +70,11 @@ def build_in_parallel(use_valgrind=False, use_asan=False):
     return True
 
 
-def run_in_parallel():
+def run_in_parallel(**kwargs):
     """Run tests in parallel."""
+    working_dir = kwargs["change_dir"]
     for test, expected in config.TESTS.iteritems():
-        out_file = config.get_example(test) + ".out"
+        out_file = config.abs_join_path(working_dir, test + ".out")
         output = subprocess.check_output(out_file)
         if output == expected:
             print("PASS: Checking", test)
@@ -90,9 +89,9 @@ def run_in_parallel():
 def run_tests(**kwargs):
     """Build and run tests."""
     if not build_in_parallel(**kwargs):
-      return False
+        return False
     print("--------------")
-    return run_in_parallel()
+    return run_in_parallel(**kwargs)
 
 
 def parse_args():
@@ -110,6 +109,11 @@ def parse_args():
         "--use-asan",
         action="store_true",
         help="Use the address sanitized version of qwip when running tests.")
+    parser.add_argument(
+        "-C",
+        "--change-dir",
+        default=config.WORKING_DIR,
+        help="The working directory to change to when testing.")
     return parser.parse_args()
 
 

@@ -3,7 +3,7 @@
 ```sh
 $ python build.py
 $ python test.py
-$ ./qwip examples/2-hello-world.qw -o hello_world.out
+$ ./out/qwip examples/2-hello-world.qw -o hello_world.out
 $ ./hello_world.out
 Hello World!
 ```
@@ -17,14 +17,9 @@ bash 4
 valgrind  # (Optional) For testing
 ```
 
-## Installing LLVM on Mac
+## Misc Notes
 
-```
-$ brew install llvm
-```
-
-Then see https://stackoverflow.com/a/52530212/2775471 if clang doesn't work.
-
-## Installing valgrind on Mac OS Mojave
-
-https://stackoverflow.com/a/56831383/2775471
+- I am able to build this on my mac, although I kept getting a segfault when
+  building with ASan on mac. I'm more willing to believe this is just my mac's
+  ASan that's the issue rather than the code since ASan and valgrind on linux
+  don't raise any issues.

@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import config
+import os
 import shlex
 import subprocess
 
@@ -13,11 +14,22 @@ CPPFLAGS = [
     "-O3", "-g", "-Werror", "-Wall", "-fno-exceptions", "-fno-rtti",
     "-std=c++14"
 ]
+LINK_FLAGS = [
+    "-fuse-ld=lld",
+]
 
 
-def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False,
-          extra_linker_args=""):
+def build(**kwargs):
     """Build qwip."""
+    cpp = kwargs["cpp"]
+    llvm_config = kwargs["llvm_config"]
+    build_asan = kwargs["build_asan"]
+    extra_linker_args = kwargs["extra_linker_args"]
+    working_dir = kwargs["change_dir"]
+
+    if not os.path.exists(working_dir):
+        os.makedirs(working_dir)
+
     llvm_cpp_flags = shlex.split(
         subprocess.check_output([llvm_config, "--cxxflags"]))
     llvm_config_cmd = [
@@ -28,51 +40,33 @@ def build(cpp=DEFAULT_CPP, llvm_config=DEFAULT_LLVM_CONFIG, build_asan=False,
     ]
     llvm_linker_flags = shlex.split(subprocess.check_output(llvm_config_cmd))
 
-    # First compile
-    processes = []
-    asan_objs = []
-    objs = []
-    for src in config.SRCS:
-        full_src = config.get_src(src)
-        obj = full_src + ".o"
-        cmd = [cpp, "-c", full_src, "-o", obj] + llvm_cpp_flags + CPPFLAGS
-        proccess = config.ProcessWrapper(descriptor="Building " + obj, cmd=cmd)
-        processes.append(proccess)
-        objs.append(obj)
-        print("Building", obj, "...")
-
-        if build_asan:
-            obj = full_src + ".asan.o"
-            cmd = [cpp, "-c", full_src, "-o", obj
-                   ] + llvm_cpp_flags + CPPFLAGS + ["-fsanitize=address"]
-            proccess = config.ProcessWrapper(
-                descriptor="Building " + obj, cmd=cmd)
-            processes.append(proccess)
-            asan_objs.append(obj)
-            print("Building", obj, "...")
-
-    for proccess in processes:
-        if not proccess.passed():
-            return False
-
-    # Now link
+    # Make regular qwip executable
+    srcs = [config.get_src(src) for src in config.SRCS]
     extra_linker_args = shlex.split(extra_linker_args)
-    link_qwip = config.ProcessWrapper(
-        descriptor="Linking qwip",
-        cmd=[cpp, "-o", "qwip"] + objs + llvm_linker_flags + extra_linker_args)
-    if build_asan:
-        link_qwip_asan = config.ProcessWrapper(
-            descriptor="Linking qwip-asan",
-            cmd=[cpp, "-o", "qwip-asan"] + objs + llvm_linker_flags + extra_linker_args +
-            ["-fsanitize=address"])
 
-    print("Linking qwip ...")
-    if not link_qwip.passed():
-        return False
+    build_qwip_cmd = config.CPPCompilerCmdLineArgs(
+        compiler=cpp,
+        srcs=srcs,
+        out=config.abs_join_path(working_dir, "qwip"),
+        cppflags=llvm_cpp_flags + CPPFLAGS,
+        linkflags=llvm_linker_flags + LINK_FLAGS + extra_linker_args)
+    build_qwip = config.ProcessWrapper(
+        descriptor="Building qwip executable", cmd=build_qwip_cmd.getcmd())
+
+    # Make address sanitized qwip executable
     if build_asan:
-        print("Linking qwip-asan ...")
-        if not link_qwip_asan.passed():
-            return False
+        build_qwip_cmd.cppflags.append("-fsanitize=address")
+        build_qwip_cmd.out = config.abs_join_path(working_dir, "qwip-asan")
+        build_qwip_asan = config.ProcessWrapper(
+            descriptor="Building address sanitized qwip executable",
+            cmd=build_qwip_cmd.getcmd())
+
+    if not build_qwip.passed():
+        return False
+
+    if build_asan and not build_qwip_asan.passed():
+        return False
+
     return True
 
 
@@ -98,6 +92,11 @@ def parse_args():
         type=str,
         default="",
         help="Extra arguments to pass when linking.")
+    parser.add_argument(
+        "-C",
+        "--change-dir",
+        default=config.WORKING_DIR,
+        help="The working directory to change to when building.")
     return parser.parse_args()
 
 
