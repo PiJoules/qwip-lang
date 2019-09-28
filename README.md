@@ -1,5 +1,7 @@
 # qwip
 
+[![Build Status](https://travis-ci.com/PiJoules/qwip-lang.svg?token=BsPiCs866fNg45sj6bkz&branch=master)](https://travis-ci.com/PiJoules/qwip-lang)
+
 ```sh
 $ python build.py
 $ python test.py
