@@ -1,0 +1,16 @@
+language: cpp
+sudo: required
+dist: bionic
+compiler:
+- clang
+os:
+- linux
+python: 2.7
+bash: 4
+before_install:
+- sudo apt-get install -y libllvm-8-ocaml-dev libllvm8 llvm-8 llvm-8-dev llvm-8-doc llvm-8-examples llvm-8-runtime lld-8
+- sudo apt-get install -y valgrind
+script:
+- python build.py --build-asan
+- python test.py --use-valgrind
+- python test.py --use-asan
