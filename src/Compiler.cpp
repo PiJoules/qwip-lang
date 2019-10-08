@@ -493,7 +493,7 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
   llvm::Value *init;
   if (!CompileExpr(stmt.getExpr(), builder, init)) return false;
 
-  llvm::Value *value_addr;
+  llvm::Value *value_addr = nullptr;
   switch (stmt.getLHS().getKind()) {
     case NODE_ID: {
       const auto &id_expr = stmt.getLHS().getAs<ID>();

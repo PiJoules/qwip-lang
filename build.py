@@ -40,7 +40,6 @@ def build(**kwargs):
 
     llvm_cpp_flags = shlex.split(
         subprocess.check_output([llvm_config, "--cxxflags"]))
-    llvm_cpp_flags.append("-Wno-unknown-warning-option")
 
     llvm_config_cmd = [
         llvm_config,
