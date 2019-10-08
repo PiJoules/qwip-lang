@@ -490,6 +490,9 @@ bool Compiler::CompileCallStmt(const CallStmt &stmt,
 }
 
 bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
+  llvm::Value *init;
+  if (!CompileExpr(stmt.getExpr(), builder, init)) return false;
+
   llvm::Value *value_addr;
   switch (stmt.getLHS().getKind()) {
     case NODE_ID: {
@@ -509,8 +512,6 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
       UNREACHABLE("Unhandled assignable kind.");
       return false;
   }
-  llvm::Value *init;
-  if (!CompileExpr(stmt.getExpr(), builder, init)) return false;
   builder.CreateStore(init, value_addr, /*isVolatile=*/false);
   return true;
 }

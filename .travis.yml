@@ -2,7 +2,6 @@ language: cpp
 sudo: required
 dist: bionic
 compiler:
-- clang
 - gcc
 os:
 - linux
@@ -13,6 +12,9 @@ before_install:
 - sudo apt-get install -y libllvm-8-ocaml-dev libllvm8 llvm-8 llvm-8-dev llvm-8-doc llvm-8-examples llvm-8-runtime lld-8
 - sudo apt-get install -y valgrind
 script:
+- g++-8 --version
+- llvm-config-8 --version
 - python build.py --build-asan
+after_success:
 - python test.py --use-valgrind
 - python test.py --use-asan
