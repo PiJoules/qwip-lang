@@ -314,6 +314,8 @@ class BinOp : public Expr {
         // TODO: The result type should depend on the types of both operands.
         return lhs_->getType();
     }
+    UNREACHABLE("Unhandled BinOpCode");
+    return nullptr;
   }
 
  private:

@@ -42,9 +42,10 @@ bool Compiler::CompileExternDecl(const ExternDecl &decl) {
     return Compile##Class(decl.getAs<Class>());
 #define NODE(Kind, Class) case Kind:
 #include "Nodes.def"
-    UNREACHABLE("Unhandled External declaration");
-    return false;
+    break;
   }
+  UNREACHABLE("Unhandled External declaration");
+  return false;
 }
 
 llvm::Type *Compiler::toLLVMType(const Type &type) {
@@ -167,13 +168,15 @@ bool Compiler::CompileExternVarDecl(const ExternVarDecl &extern_decl) {
 
   std::unique_ptr<Type> type = decl.getType();
   llvm::Type *llvm_type = toLLVMType(*type);
-  return getLLVMModule().getOrInsertGlobal(
-      decl.getName(), llvm_type, [&]() -> llvm::GlobalVariable * {
-        llvm::Constant *init = llvm::Constant::getNullValue(llvm_type);
-        return new llvm::GlobalVariable(
-            getLLVMModule(), llvm_type, /*isConstant=*/true,
-            llvm::GlobalValue::ExternalLinkage, init, decl.getName());
-      });
+  llvm::GlobalVariable *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(
+      getLLVMModule().getNamedValue(decl.getName()));
+  if (!global) {
+    llvm::Constant *init = llvm::Constant::getNullValue(llvm_type);
+    global = new llvm::GlobalVariable(
+        getLLVMModule(), llvm_type, /*isConstant=*/true,
+        llvm::GlobalValue::ExternalLinkage, init, decl.getName());
+  }
+  return global;
 }
 
 bool Compiler::CompileExternVarDef(const ExternVarDef &externdef) {
@@ -181,23 +184,26 @@ bool Compiler::CompileExternVarDef(const ExternVarDef &externdef) {
   const VarDecl &decl = def.getDecl();
   std::unique_ptr<Type> type = decl.getType();
   llvm::Type *llvm_type = toLLVMType(*type);
-  return getLLVMModule().getOrInsertGlobal(
-      decl.getName(), llvm_type, [&]() -> llvm::GlobalVariable * {
-        llvm::Constant *init;
-        llvm::Value *init_val;
-        llvm::IRBuilder<> builder(llvm_context_);
-        if (!CompileExpr(def.getInit(), builder, init_val)) return nullptr;
 
-        init = llvm::dyn_cast<llvm::Constant>(init_val);
-        if (!init) {
-          std::cerr << "The initial value of this global is not a constant.\n";
-          return nullptr;
-        }
+  llvm::GlobalVariable *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(
+      getLLVMModule().getNamedValue(decl.getName()));
+  if (!global) {
+    llvm::Constant *init;
+    llvm::Value *init_val;
+    llvm::IRBuilder<> builder(llvm_context_);
+    if (!CompileExpr(def.getInit(), builder, init_val)) return false;
 
-        return new llvm::GlobalVariable(
-            getLLVMModule(), llvm_type, /*isConstant=*/true,
-            llvm::GlobalValue::ExternalLinkage, init, decl.getName());
-      });
+    init = llvm::dyn_cast<llvm::Constant>(init_val);
+    if (!init) {
+      std::cerr << "The initial value of this global is not a constant.\n";
+      return false;
+    }
+
+    return new llvm::GlobalVariable(
+        getLLVMModule(), llvm_type, /*isConstant=*/true,
+        llvm::GlobalValue::ExternalLinkage, init, decl.getName());
+  }
+  return global;
 }
 
 bool Compiler::CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
@@ -257,6 +263,8 @@ bool Compiler::CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder) {
     return Compile##Class(stmt.getAs<Class>(), builder);
 #include "Nodes.def"
   }
+  UNREACHABLE("Unhandled statement kind");
+  return false;
 }
 
 bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
@@ -271,9 +279,10 @@ bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
 #define EXPR(Kind, Class)
 #define NODE(Kind, Class) case Kind:
 #include "Nodes.def"
-    UNREACHABLE("Unknown expression kind.");
-    return false;
+    break;
   }
+  UNREACHABLE("Unhandled expression kind");
+  return false;
 }
 
 bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,

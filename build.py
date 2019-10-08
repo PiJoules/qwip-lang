@@ -7,16 +7,24 @@ import os
 import shlex
 import subprocess
 
-DEFAULT_CPP = "clang++"
-DEFAULT_LLVM_CONFIG = "llvm-config"
+# NOTE: Due to an ABI incompatibility with projects built with Clang and LLVM
+# libraries built with GCC, we will encounter a segfault in libLLVM
+# (particularly during the createTargetMachine() step) if we build this project
+# using Clang from LLVM libraries we get from apt-get.
+# See https://groups.google.com/forum/#!topic/llvm-dev/8Tcz49kTNCw
+#
+# I have not yet tested this, but based off this, it should theoretically be
+# possible to build everything using Clang if we build LLVM with Clang (or maybe
+# at least locally). For at most LLVM 8 libraries, if we get them via apt-get,
+# we should use GCC as the compiler.
+DEFAULT_CPP = "g++-8"
+DEFAULT_LLVM_CONFIG = "llvm-config-8"
 
 CPPFLAGS = [
     "-O3", "-g", "-Werror", "-Wall", "-fno-exceptions", "-fno-rtti",
     "-std=c++14"
 ]
-LINK_FLAGS = [
-    "-fuse-ld=lld",
-]
+LINK_FLAGS = []
 
 
 def build(**kwargs):
@@ -32,6 +40,8 @@ def build(**kwargs):
 
     llvm_cpp_flags = shlex.split(
         subprocess.check_output([llvm_config, "--cxxflags"]))
+    llvm_cpp_flags.append("-Wno-unknown-warning-option")
+
     llvm_config_cmd = [
         llvm_config,
         "--ldflags",

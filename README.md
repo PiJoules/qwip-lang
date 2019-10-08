@@ -1,6 +1,6 @@
 # qwip
 
-[![Build Status](https://travis-ci.com/PiJoules/qwip-lang.svg?token=BsPiCs866fNg45sj6bkz&branch=master)](https://travis-ci.com/PiJoules/qwip-lang)
+[![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang)
 
 ```sh
 $ python build.py
@@ -14,7 +14,8 @@ Hello World!
 
 ```
 python 2.7  # For building and testing
-llvm v8.0.0
+g++-8
+llvm-8
 bash 4
 valgrind  # (Optional) For testing
 ```

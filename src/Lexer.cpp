@@ -11,6 +11,8 @@ std::string TokenKindAsString(TokenKind kind) {
     return STR(Kind);
 #include "Tokens.def"
   }
+  UNREACHABLE("Unknown token");
+  return "";
 }
 
 bool Lexer::Lex(Token &result) {

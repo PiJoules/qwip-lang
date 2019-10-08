@@ -16,6 +16,8 @@ std::string TypeKindToString(TypeKind kind) {
     return STR(Kind);
 #include "Types.def"
   }
+  UNREACHABLE("Unknown type");
+  return "";
 }
 
 std::string NodeKindToString(NodeKind kind) {
@@ -25,6 +27,8 @@ std::string NodeKindToString(NodeKind kind) {
     return STR(Kind);
 #include "Nodes.def"
   }
+  UNREACHABLE("Unknown node");
+  return "";
 }
 
 bool Parser::Parse(std::unique_ptr<Module> &result) {
