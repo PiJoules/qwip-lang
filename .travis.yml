@@ -7,14 +7,19 @@ os:
 - linux
 python: 2.7
 bash: 4
+cmake: 3.4.3
 before_install:
 - sudo apt-get install -y g++-8
 - sudo apt-get install -y libllvm-8-ocaml-dev libllvm8 llvm-8 llvm-8-dev llvm-8-doc llvm-8-examples llvm-8-runtime lld-8
 - sudo apt-get install -y valgrind
-script:
 - g++-8 --version
 - llvm-config-8 --version
-- python build.py --build-asan
+- cmake --version
+- python --version
+- valgrind --version
+script:
+- mkdir build && cd build
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=VALGRIND ../
+- ninja qwip
 after_success:
-- python test.py --use-valgrind
-- python test.py --use-asan
+- ninja test
