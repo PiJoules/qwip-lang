@@ -10,8 +10,9 @@ bash: 4
 cmake: 3.4.3
 before_install:
 - sudo apt-get install -y g++-8
-- sudo apt-get install -y libllvm-8-ocaml-dev libllvm8 llvm-8 llvm-8-dev llvm-8-doc llvm-8-examples llvm-8-runtime lld-8
+- sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8
 - sudo apt-get install -y valgrind
+- sudo apt-get install -y ninja-build
 - g++-8 --version
 - llvm-config-8 --version
 - cmake --version
