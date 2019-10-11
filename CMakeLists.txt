@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.4.3)
 project(qwip)
 
-option(TEST_WITH
-	"When testing, optionally test with valgrind or the qwip-asan variant. Can be VALGRIND, ASAN, or OFF (default)."
-       OFF)
+option(
+  SANITIZER
+  "Define the sanitizer used to build qwip. Options are ADDRESS, THREAD, UNDEFINED. Defaults to an empty string to indicate no sanitizer."
+  "")
+option(
+  TEST_WITH_VALGRIND
+  "Run tests against valgrind for memory checking. Defaults to OFF."
+  OFF)
+
+string(TOUPPER ${SANITIZER} SANITIZER)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(PythonInterp 2.7 REQUIRED)
@@ -17,37 +24,38 @@ add_definitions(${LLVM_DEFINITIONS})
 
 message(STATUS "LLVM C++ Compilation Flags: ${LLVM_DEFINITIONS}")
 
+set(SRCS
+  src/Compiler.cpp
+  src/Lexer.cpp
+  src/Parser.cpp
+  src/qwip.cpp)
+
 # Now build our tools.
-add_executable(qwip
-  src/Compiler.cpp
-  src/Lexer.cpp
-  src/Parser.cpp
-  src/qwip.cpp)
+add_executable(qwip ${SRCS})
+llvm_config(qwip USE_SHARED)  # Link against the standalone libLLVM shared library
 
-add_executable(qwip-asan
-  src/Compiler.cpp
-  src/Lexer.cpp
-  src/Parser.cpp
-  src/qwip.cpp)
-target_compile_options(qwip-asan PRIVATE "-fsanitize=address")
-set_target_properties(qwip-asan PROPERTIES LINK_FLAGS "-fsanitize=address")
-
-# Link against the single standalone libLLVM shared library.
-llvm_config(qwip USE_SHARED)
-llvm_config(qwip-asan USE_SHARED)
+if (${SANITIZER} STREQUAL "ADDRESS")
+  message(STATUS "Building with ASan")
+  target_compile_options(qwip PRIVATE "-fsanitize=address,pointer-compare,pointer-subtract")
+  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=address,pointer-compare,pointer-subtract")
+elseif(${SANITIZER} STREQUAL "THREAD")
+  message(STATUS "Building with TSan")
+  target_compile_options(qwip PRIVATE "-fsanitize=thread")
+  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=thread")
+elseif(${SANITIZER} STREQUAL "UNDEFINED")
+  message(STATUS "Building with UBSan")
+  target_compile_options(qwip PRIVATE "-fsanitize=undefined")
+  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=undefined")
+endif()
 
 # Testing
 ENABLE_TESTING()
 include(CTest)
 
 function(add_qwip_test_example test_name expected_output)
-  if(${TEST_WITH} STREQUAL "VALGRIND")
+  if (${TEST_WITH_VALGRIND})
     add_test("build-example-${test_name}"
       valgrind --leak-check=full --error-exitcode=1 "${CMAKE_BINARY_DIR}/qwip"
-      "${CMAKE_SOURCE_DIR}/examples/${test_name}.qw" "-o" "${test_name}.qw.out")
-  elseif()
-    add_test("build-example-${test_name}"
-      qwip-asan
       "${CMAKE_SOURCE_DIR}/examples/${test_name}.qw" "-o" "${test_name}.qw.out")
   else()
     add_test("build-example-${test_name}"
@@ -61,8 +69,6 @@ endfunction()
 # TODO: Update testing such that whenever we want to add a new test, we can
 # just add a new test file or update another testing file instead of having to
 # change the cmake file.
-# TODO: Come up with a way to run the valgrind and asan tests without having
-# to change the cmake incovation.
 add_qwip_test_example(1-empty-main "")
 add_qwip_test_example(2-hello-world "Hello World!\n")
 add_qwip_test_example(3-variable-declaration "Test\nTest\n")

@@ -9,18 +9,33 @@ python: 2.7
 bash: 4
 cmake: 3.4.3
 before_install:
-- sudo apt-get install -y g++-8
-- sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8
-- sudo apt-get install -y valgrind
-- sudo apt-get install -y ninja-build
+- sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
 - g++-8 --version
 - llvm-config-8 --version
 - cmake --version
 - ninja --version
 - python --version
-- valgrind --version
 script:
+# Regular tests
 - mkdir build && cd build
-- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=ASAN ../
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 ..
+- ninja
+- ninja test
+
+# ASan
+- cd .. && mkdir build-asan && cd build-asan
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=ADDRESS ..
+- ninja
+- ninja test
+
+# TSan
+- cd .. && mkdir build-tsan && cd build-tsan
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=THREAD ..
+- ninja
+- ninja test
+
+# UBan
+- cd .. && mkdir build-ubsan && cd build-ubsan
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ..
 - ninja
 - ninja test

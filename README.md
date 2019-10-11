@@ -1,6 +1,7 @@
 # qwip
 
 master branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang)
+
 dev branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang)
 
 ## Building and Running
@@ -48,17 +49,19 @@ $ ninja test
 Alternatively, you can change the tests to run against valgrind.
 
 ```sh
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=VALGRIND ../qwip-lang
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH_VALGRIND=ON ../qwip-lang
 $ ninja qwip
 $ ninja test
 ```
 
-Or with ASan
+### Sanitizers
+
+You can build qwip with either Address, Thread, or UndefinedBehavior sanitizers:
 
 ```sh
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=ASAN ../qwip-lang
-$ ninja qwip-asan
-$ ninja test
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=ADDRESS ../qwip-lang
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=THREAD ../qwip-lang
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ../qwip-lang
 ```
 
 ## Misc Notes
