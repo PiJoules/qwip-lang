@@ -21,6 +21,6 @@ before_install:
 - valgrind --version
 script:
 - mkdir build && cd build
-- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=VALGRIND ../
-- ninja qwip
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH=ASAN ../
+- ninja
 - ninja test
