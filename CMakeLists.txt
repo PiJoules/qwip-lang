@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.4.3)
 project(qwip)
 
 option(TEST_WITH
@@ -30,7 +30,7 @@ add_executable(qwip-asan
   src/Parser.cpp
   src/qwip.cpp)
 target_compile_options(qwip-asan PRIVATE "-fsanitize=address")
-target_link_options(qwip-asan PRIVATE "-fsanitize=address")
+set_target_properties(qwip-asan PROPERTIES LINK_FLAGS "-fsanitize=address")
 
 # Link against the single standalone libLLVM shared library.
 llvm_config(qwip USE_SHARED)
