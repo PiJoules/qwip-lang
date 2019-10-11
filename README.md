@@ -1,12 +1,7 @@
 # qwip
 
-master branch status:
-
-[![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang)
-
-dev branch status:
-
-[![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang)
+master branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang)
+dev branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang)
 
 ## Building and Running
 
