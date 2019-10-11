@@ -1,8 +1,9 @@
-"""Format source files."""
+"""Format source files. Run from the root project directory."""
 
 from __future__ import print_function
 
-import config
+import os
+import os.path
 import subprocess
 
 DEFAULT_FORMATTER = "clang-format"
@@ -10,12 +11,16 @@ DEFAULT_FORMATTER = "clang-format"
 
 def format(formatter=DEFAULT_FORMATTER):
     """Format all source files."""
-    for src in config.ALL_SRCS:
-        if subprocess.check_call(
-            [formatter, "-i", "--style=google",
-             config.get_src(src)]):
-            return False
-        print("Formatted " + src)
+    for root, _, files in os.walk("."):
+        for name in files:
+            _, ext = os.path.splitext(name)
+            if not (ext == ".h" or ext == ".cpp"):
+              continue
+            path = os.path.join(root, name)
+            if subprocess.check_call(
+                [formatter, "-i", "--style=google", path]):
+                return False
+            print("Formatted " + path)
     return True
 
 
