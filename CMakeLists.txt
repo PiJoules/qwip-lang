@@ -32,6 +32,17 @@ set(SRCS
 
 # Now build our tools.
 add_executable(qwip ${SRCS})
+target_compile_options(qwip
+  PRIVATE -O3
+  PRIVATE -g
+  PRIVATE -Werror
+  PRIVATE -Wextra
+  PRIVATE -Wall
+  PRIVATE -fno-exceptions
+  PRIVATE -fno-rtti
+  PRIVATE -std=c++14
+  PRIVATE -Wno-unused-parameter  # For warnings from LLVM headers
+)
 llvm_config(qwip USE_SHARED)  # Link against the standalone libLLVM shared library
 
 if (${SANITIZER} STREQUAL "ADDRESS")
