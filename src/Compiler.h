@@ -14,7 +14,7 @@ class Compiler {
 
   bool CompileModule(const Module &module);
   llvm::Module &getLLVMModule() const {
-    CHECK_PTR(llvm_module_);
+    assert_ptr(llvm_module_);
     return *llvm_module_;
   }
   bool SaveToExecutable(const std::string &input_filename,

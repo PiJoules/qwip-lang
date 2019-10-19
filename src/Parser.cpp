@@ -1,5 +1,7 @@
 #include "Parser.h"
 
+#include <cassert>
+
 // Convenience macros for lexing and exiting a method on a lex error.
 #define TRY_LEX(Lexer, Tok) \
   if (!Lexer.Lex(Tok)) return false;
@@ -89,8 +91,8 @@ bool Parser::ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result) {
 bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);  // type
-  CHECK(tok.kind == TOK_TYPE,
-        "Only call ParseExternTypeDef if the previous token was a 'type'.");
+  assert(tok.kind == TOK_TYPE &&
+         "Only call ParseExternTypeDef if the previous token was a 'type'.");
   SourceLocation typeloc = tok.loc;
 
   // <id>
@@ -145,9 +147,9 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
 
   // }
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_RBRACE,
-        "Should only break out of the previous loop if we ran into a closing "
-        "brace.");
+  assert(tok.kind == TOK_RBRACE &&
+         "Should only break out of the previous loop if we ran into a closing "
+         "brace.");
 
   auto type_def = std::make_unique<TypeDef>(typeloc, name, members);
   StructType type = type_def->getStructType();
@@ -180,9 +182,9 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
   // {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_LBRACE,
-        "Do not call ParseBracedStmts unless the previous lookahead was an "
-        "opening brace.");
+  assert(tok.kind == TOK_LBRACE &&
+         "Do not call ParseBracedStmts unless the previous lookahead was an "
+         "opening brace.");
 
   // Statements
   while (1) {
@@ -201,9 +203,9 @@ bool Parser::ParseBracedStmts(std::vector<std::unique_ptr<Stmt>> &stmts) {
 
   // }
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_RBRACE,
-        "Should only break out of the previous loop if we ran into a closing "
-        "brace.");
+  assert(tok.kind == TOK_RBRACE &&
+         "Should only break out of the previous loop if we ran into a closing "
+         "brace.");
 
   return true;
 }
@@ -247,8 +249,8 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     TRY_PEEK(lexer_, lookahead);
     if (lookahead.kind == TOK_ASSIGN) {
       TRY_LEX(lexer_, tok);
-      CHECK(tok.kind == TOK_ASSIGN,
-            "Expected the next token in the assignment to be =.");
+      assert(tok.kind == TOK_ASSIGN &&
+             "Expected the next token in the assignment to be =.");
 
       std::unique_ptr<Expr> init;
       if (!ParseExpr(init)) return false;
@@ -285,8 +287,8 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
 
 bool Parser::ParseReturn(std::unique_ptr<Return> &result) {
   Token tok;
-  CHECK(lexer_.Lex(tok) && tok.kind == TOK_RET,
-        "Only call ParseReturn if the previous lookahead was a return token.");
+  assert(lexer_.Lex(tok) && tok.kind == TOK_RET &&
+         "Only call ParseReturn if the previous lookahead was a return token.");
   SourceLocation retloc = tok.loc;
 
   std::unique_ptr<Expr> expr;
@@ -307,7 +309,7 @@ bool Parser::ParseReturn(std::unique_ptr<Return> &result) {
 bool Parser::ParseWhile(std::unique_ptr<While> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_WHILE, "Expected a while.");
+  assert(tok.kind == TOK_WHILE && "Expected a while.");
   SourceLocation whileloc = tok.loc;
 
   std::unique_ptr<Expr> cond;
@@ -324,7 +326,7 @@ bool Parser::ParseWhile(std::unique_ptr<While> &result) {
 bool Parser::ParseIf(std::unique_ptr<If> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_IF, "Expected an if.");
+  assert(tok.kind == TOK_IF && "Expected an if.");
   SourceLocation ifloc = tok.loc;
 
   std::unique_ptr<Expr> cond;
@@ -355,7 +357,7 @@ bool Parser::ParseIf(std::unique_ptr<If> &result) {
 bool Parser::ParseParam(std::unique_ptr<Param> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_ID, "Expected an ID");
+  assert(tok.kind == TOK_ID && "Expected an ID");
   std::string name = tok.chars;
   SourceLocation loc = tok.loc;
 
@@ -375,7 +377,7 @@ bool Parser::ParseParam(std::unique_ptr<Param> &result) {
 bool Parser::ParseNamedDeclOrDef(std::unique_ptr<Stmt> &result) {
   Token id_tok;
   TRY_LEX(lexer_, id_tok);
-  CHECK(id_tok.kind == TOK_ID, "Expected an ID");
+  assert(id_tok.kind == TOK_ID && "Expected an ID");
   return ParseNamedDeclOrDefAfterID(id_tok, result);
 }
 
@@ -484,7 +486,7 @@ bool Parser::ParseTypeNode(std::unique_ptr<TypeNode> &result) {
 bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_LPAR, "Expected a (");
+  assert(tok.kind == TOK_LPAR && "Expected a (");
   SourceLocation loc = tok.loc;
 
   // Parse arguments.
@@ -542,9 +544,9 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
 
   // )
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_RPAR,
-        "We should have only broken out of the previous loop if we ran into a "
-        "closing parenthesis.");
+  assert(tok.kind == TOK_RPAR &&
+         "We should have only broken out of the previous loop if we ran into a "
+         "closing parenthesis.");
 
   // ->
   TRY_LEX(lexer_, tok);
@@ -562,7 +564,8 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
 
 bool Parser::ParseExprAfterID(const Token &id_tok,
                               std::unique_ptr<Expr> &result) {
-  CHECK(id_tok.kind == TOK_ID, "Expected the already lexed token to be an ID.");
+  assert(id_tok.kind == TOK_ID &&
+         "Expected the already lexed token to be an ID.");
   if (!ParseSingleExprAfterID(id_tok, result)) return false;
   return TryToParseCompoundExpr(result);
 }
@@ -683,8 +686,8 @@ bool Parser::TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr) {
 
     // )
     TRY_LEX(lexer_, tok);
-    CHECK(
-        tok.kind == TOK_RPAR,
+    assert(
+        tok.kind == TOK_RPAR &&
         "We should have only broken out of the previous loop if we ran into a "
         "closing parenthesis.");
 
@@ -700,7 +703,8 @@ bool Parser::ParseExpr(std::unique_ptr<Expr> &result) {
 
 bool Parser::ParseSingleExprAfterID(const Token &id_tok,
                                     std::unique_ptr<Expr> &result) {
-  CHECK(id_tok.kind == TOK_ID, "Expected the already lexed token to be an ID.");
+  assert(id_tok.kind == TOK_ID &&
+         "Expected the already lexed token to be an ID.");
 
   // Parse a caller for now.
   SourceLocation exprloc = id_tok.loc;
@@ -720,7 +724,7 @@ bool Parser::ParseSingleExprAfterID(const Token &id_tok,
 bool Parser::ParseStr(std::unique_ptr<Str> &result) {
   Token tok;
   TRY_LEX(lexer_, tok);
-  CHECK(tok.kind == TOK_STR, "Expected a string token to parse.");
+  assert(tok.kind == TOK_STR && "Expected a string token to parse.");
   result = std::make_unique<Str>(tok.loc, tok.chars);
   return true;
 }

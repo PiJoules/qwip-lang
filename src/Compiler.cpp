@@ -57,7 +57,7 @@ llvm::Type *Compiler::toLLVMType(const Type &type) {
     break;
 #include "Types.def"
   }
-  CHECK(llvm_type, "Unsuccessful conversion to an llvm type.");
+  assert(llvm_type && "Unsuccessful conversion to an llvm type.");
   return llvm_type;
 }
 
@@ -231,7 +231,8 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef, llvm::IRBuilder<> &) {
 
   // Store the arguments.
   const TypeNode &type_node = funcdef.getDecl().getTypeNode();
-  CHECK(type_node.getKind() == NODE_FUNC_TYPE, "Expected a function type node");
+  assert(type_node.getKind() == NODE_FUNC_TYPE &&
+         "Expected a function type node");
   const auto &func_type_node = type_node.getAs<FuncTypeNode>();
   const auto &params = func_type_node.getParams();
   for (auto &arg : func->args()) {

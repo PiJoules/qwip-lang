@@ -145,17 +145,17 @@ bool Lexer::LexSingleCharToken(char lookahead, Token &result) {
     default:
       return false;
   }
-  CHECK(lookahead == getNextChar(),
-        "The lookahead passed to this should have been the next character off "
-        "the stream.");
+  assert(lookahead == getNextChar() &&
+         "The lookahead passed to this should have been the next character off "
+         "the stream.");
   result.chars = lookahead;
   return true;
 }
 
 bool Lexer::LexString(Token &result) {
   char c = getNextChar();
-  CHECK(
-      c == '"',
+  assert(
+      c == '"' &&
       "Expected a double quote as the first character off the input_ stream.");
 
   char next_char = input_.peek();
@@ -181,15 +181,15 @@ bool Lexer::LexString(Token &result) {
   }
 
   // next_char is "
-  CHECK(getNextChar() == '"', "Expected the next char to be the ending \".");
+  assert(getNextChar() == '"' && "Expected the next char to be the ending \".");
   result.kind = TOK_STR;
   return true;
 }
 
 bool Lexer::LexInt(Token &result) {
   char c = getNextChar();
-  CHECK(isdigit(c),
-        "Expeted the first character off the stream tp be a digit.");
+  assert(isdigit(c) &&
+         "Expeted the first character off the stream tp be a digit.");
 
   char next_char = input_.peek();
   result.chars.clear();
@@ -207,9 +207,9 @@ bool Lexer::LexInt(Token &result) {
 
 bool Lexer::LexKeywordOrID(Token &result) {
   char c = getNextChar();
-  CHECK((isalpha(c) || c == '_'),
-        "Expected the first character in the input_ to be an underscore or "
-        "letter.");
+  assert((isalpha(c) || c == '_') &&
+         "Expected the first character in the input_ to be an underscore or "
+         "letter.");
 
   char next_char = input_.peek();
   std::string buffer;

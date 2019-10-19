@@ -15,13 +15,13 @@ enum NodeKind {
 #include "Nodes.def"
 };
 
-#define CHECK_PTR(PTR) CHECK(bool(PTR), "Expected a  non-null pointer.")
+#define assert_ptr(PTR) assert(bool(PTR) && "Expected a non-null pointer.")
 
 template <typename T>
 void __CheckUptrVector(const std::vector<std::unique_ptr<T>> &ptrs) {
-  for (const auto &ptr : ptrs) CHECK_PTR(ptr);
+  for (const auto &ptr : ptrs) assert_ptr(ptr);
 }
-#define CHECK_PTRS(PTRS) __CheckUptrVector(PTRS)
+#define assert_ptr_vector(PTRS) __CheckUptrVector(PTRS)
 
 enum TypeKind {
 #define TYPE(Kind, Class) Kind,
@@ -50,8 +50,8 @@ class FuncType : public Type {
       : ret_type_(std::move(ret_type)),
         arg_types_(std::move(arg_types)),
         isvararg_(isvararg) {
-    CHECK_PTR(ret_type_);
-    CHECK_PTRS(arg_types_);
+    assert_ptr(ret_type_);
+    assert_ptr_vector(arg_types_);
   }
 
   TypeKind getKind() const override { return TYPE_FUNC; }
@@ -150,7 +150,7 @@ class IDType : public Type {
 class PtrType : public Type {
  public:
   PtrType(std::unique_ptr<Type> &pointee) : pointee_(std::move(pointee)) {
-    CHECK_PTR(pointee_);
+    assert_ptr(pointee_);
   }
 
   TypeKind getKind() const override { return TYPE_PTR; }
@@ -190,7 +190,7 @@ class Module : public Node {
   Module(const SourceLocation &loc,
          std::vector<std::unique_ptr<ExternDecl>> &decls)
       : Node(loc), decls_(std::move(decls)) {
-    CHECK_PTRS(decls_);
+    assert_ptr_vector(decls_);
   }
 
   NodeKind getKind() const override { return NODE_MODULE; }
@@ -221,8 +221,8 @@ class Call : public Expr {
 
   std::unique_ptr<Type> getType() const override {
     std::unique_ptr<Type> caller_type = caller_->getType();
-    CHECK(caller_type->getKind() == TYPE_FUNC,
-          "Expected the caller to be a function type.");
+    assert(caller_type->getKind() == TYPE_FUNC &&
+           "Expected the caller to be a function type.");
     return caller_type->getAs<FuncType>().getReturnType().Clone();
   }
 
@@ -265,11 +265,11 @@ class ID : public Expr {
   ID(const SourceLocation loc, const std::string &name,
      std::unique_ptr<Type> &type)
       : Expr(loc), name_(name), type_(std::move(type)) {
-    CHECK_PTR(type_);
+    assert_ptr(type_);
   }
   ID(const SourceLocation loc, const std::string &name, const Type &type)
       : Expr(loc), name_(name), type_(type.Clone()) {
-    CHECK_PTR(type_);
+    assert_ptr(type_);
   }
   NodeKind getKind() const override { return NODE_ID; }
   std::unique_ptr<Type> getType() const override { return type_->Clone(); }
@@ -296,8 +296,8 @@ class BinOp : public Expr {
         lhs_(std::move(lhs)),
         rhs_(std::move(rhs)),
         op_(op) {
-    CHECK_PTR(lhs_);
-    CHECK_PTR(rhs_);
+    assert_ptr(lhs_);
+    assert_ptr(rhs_);
   }
 
   NodeKind getKind() const override { return NODE_BINOP; }
@@ -328,9 +328,9 @@ class MemberAccess : public Expr {
  public:
   MemberAccess(std::unique_ptr<Expr> &base, const std::string &member)
       : Expr(base->getLoc()), base_(std::move(base)), member_(member) {
-    CHECK_PTR(base_);
-    CHECK(base_->getType()->getKind() == TYPE_STRUCT,
-          "The base should be a struct type.");
+    assert_ptr(base_);
+    assert(base_->getType()->getKind() == TYPE_STRUCT &&
+           "The base should be a struct type.");
   }
 
   NodeKind getKind() const override { return NODE_MEMBER_ACCESS; }
@@ -360,7 +360,7 @@ class PtrTypeNode : public TypeNode {
  public:
   PtrTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &type)
       : TypeNode(loc), pointee_type_(std::move(type)) {
-    CHECK_PTR(pointee_type_);
+    assert_ptr(pointee_type_);
   }
   NodeKind getKind() const override { return NODE_PTR_TYPE; }
 
@@ -400,11 +400,11 @@ class VarDecl : public Stmt {
   VarDecl(const SourceLocation loc, const std::string &name,
           std::unique_ptr<TypeNode> &type)
       : Stmt(loc), name_(name), type_(std::move(type)) {
-    CHECK_PTR(type_);
+    assert_ptr(type_);
   }
   VarDecl(const SourceLocation loc, const std::string &name, TypeNode *type)
       : Stmt(loc), name_(name), type_(type) {
-    CHECK_PTR(type_);
+    assert_ptr(type_);
   }
   NodeKind getKind() const override { return NODE_VARDECL; }
 
@@ -421,8 +421,8 @@ class VarDef : public Stmt {
  public:
   VarDef(std::unique_ptr<VarDecl> &decl, std::unique_ptr<Expr> &init)
       : Stmt(decl->getLoc()), decl_(std::move(decl)), init_(std::move(init)) {
-    CHECK_PTR(decl_);
-    CHECK_PTR(init_);
+    assert_ptr(decl_);
+    assert_ptr(init_);
   }
 
   NodeKind getKind() const override { return NODE_VARDEF; }
@@ -445,7 +445,7 @@ class TypeDef : public Stmt {
   TypeDef(const SourceLocation loc, const std::string &name,
           std::vector<std::unique_ptr<MemberDecl>> &members)
       : Stmt(loc), name_(name), members_(std::move(members)) {
-    CHECK_PTRS(members_);
+    assert_ptr_vector(members_);
   }
 
   NodeKind getKind() const override { return NODE_TYPEDEF; }
@@ -466,7 +466,7 @@ class Param : public Node {
   Param(const SourceLocation loc, const std::string &name,
         std::unique_ptr<TypeNode> &type)
       : Node(loc), name_(name), type_(std::move(type)) {
-    CHECK_PTR(type_);
+    assert_ptr(type_);
   }
   NodeKind getKind() const override { return NODE_PARAM; }
 
@@ -489,8 +489,8 @@ class FuncTypeNode : public TypeNode {
         ret_type_(std::move(ret_type)),
         params_(std::move(params)),
         isvararg_(isvararg) {
-    CHECK_PTR(ret_type_);
-    CHECK_PTRS(params_);
+    assert_ptr(ret_type_);
+    assert_ptr_vector(params_);
   }
 
   const TypeNode &getReturnTypeNode() const { return *ret_type_; }
@@ -523,8 +523,8 @@ class Assign : public Stmt {
  public:
   Assign(std::unique_ptr<Expr> &lhs, std::unique_ptr<Expr> &expr)
       : Stmt(lhs->getLoc()), lhs_(std::move(lhs)), expr_(std::move(expr)) {
-    CHECK_PTR(lhs_);
-    CHECK_PTR(expr_);
+    assert_ptr(lhs_);
+    assert_ptr(expr_);
   }
 
   NodeKind getKind() const override { return NODE_ASSIGN; }
@@ -540,7 +540,7 @@ class CallStmt : public Stmt {
  public:
   CallStmt(std::unique_ptr<Call> &call)
       : Stmt(call->getLoc()), call_(std::move(call)) {
-    CHECK_PTR(call_);
+    assert_ptr(call_);
   }
 
   NodeKind getKind() const override { return NODE_CALLSTMT; }
@@ -555,8 +555,8 @@ class If : public Stmt {
   If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body)
       : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
-    CHECK_PTR(cond_);
-    CHECK_PTRS(body_);
+    assert_ptr(cond_);
+    assert_ptr_vector(body_);
   }
   If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body,
@@ -565,9 +565,9 @@ class If : public Stmt {
         cond_(std::move(cond)),
         body_(std::move(body)),
         else_body_(std::move(else_body)) {
-    CHECK_PTR(cond_);
-    CHECK_PTRS(body_);
-    CHECK_PTRS(else_body_);
+    assert_ptr(cond_);
+    assert_ptr_vector(body_);
+    assert_ptr_vector(else_body_);
   }
   NodeKind getKind() const override { return NODE_IF; }
 
@@ -589,8 +589,8 @@ class While : public Stmt {
   While(const SourceLocation loc, std::unique_ptr<Expr> &cond,
         std::vector<std::unique_ptr<Stmt>> &body)
       : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
-    CHECK_PTR(cond_);
-    CHECK_PTRS(body_);
+    assert_ptr(cond_);
+    assert_ptr_vector(body_);
   }
 
   NodeKind getKind() const override { return NODE_WHILE; }
@@ -608,10 +608,10 @@ class FuncDef : public Stmt {
   FuncDef(std::unique_ptr<VarDecl> &decl,
           std::vector<std::unique_ptr<Stmt>> &stmts)
       : Stmt(decl->getLoc()), decl_(std::move(decl)), stmts_(std::move(stmts)) {
-    CHECK_PTR(decl_);
-    CHECK_PTRS(stmts_);
-    CHECK(decl_->getTypeNode().getKind() == NODE_FUNC_TYPE,
-          "A FuncDef node can only accept a VarDecl that is a function type.");
+    assert_ptr(decl_);
+    assert_ptr_vector(stmts_);
+    assert(decl_->getTypeNode().getKind() == NODE_FUNC_TYPE &&
+           "A FuncDef node can only accept a VarDecl that is a function type.");
   }
   NodeKind getKind() const override { return NODE_FUNCDEF; }
   const VarDecl &getDecl() const { return *decl_; }
@@ -626,7 +626,7 @@ class Return : public Stmt {
  public:
   Return(const SourceLocation loc, std::unique_ptr<Expr> &expr)
       : Stmt(loc), expr_(std::move(expr)) {
-    CHECK_PTR(expr_);
+    assert_ptr(expr_);
   }
   NodeKind getKind() const override { return NODE_RET; }
 
@@ -643,7 +643,7 @@ class Return : public Stmt {
    public:                                                        \
     Class(std::unique_ptr<InnerClass> &inner)                     \
         : Parent(inner->getLoc()), inner_(std::move(inner)) {     \
-      CHECK_PTR(inner_);                                          \
+      assert_ptr(inner_);                                         \
     }                                                             \
     NodeKind getKind() const override { return Kind; }            \
     const InnerClass &get##InnerClass() const { return *inner_; } \
@@ -724,9 +724,9 @@ class Parser {
   bool TryToParseCompoundExpr(std::unique_ptr<Expr> &expr);
 
   Context &getContext() {
-    CHECK(!contexts_.empty(),
-          "We have not parsed a module yet if there are no contexts on the "
-          "stack.");
+    assert(!contexts_.empty() &&
+           "We have not parsed a module yet if there are no contexts on the "
+           "stack.");
     return contexts_.back();
   }
   const Type *getTypeForVar(const std::string &name) const {
