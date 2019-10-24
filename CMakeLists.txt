@@ -34,11 +34,12 @@ set(SRCS
 add_executable(qwip ${SRCS})
 target_compile_options(qwip
   PRIVATE -Werror
-  PRIVATE -Wextra
   PRIVATE -Wall
+  PRIVATE -Wextra
+  PRIVATE -Wconversion
   PRIVATE -fno-exceptions
   PRIVATE -fno-rtti
-  PRIVATE -std=c++14
+  PRIVATE -std=c++17
   PRIVATE -Wno-unused-parameter  # For warnings from LLVM headers
   PRIVATE -UNDEBUG  # We will always keep assertions on!
 )

@@ -72,7 +72,6 @@ bool DumpTokens(Lexer &lexer) {
   } while (tok.kind != TOK_EOF);
   return true;
 }
-
 }  // namespace
 
 int main(int argc, char **argv) {

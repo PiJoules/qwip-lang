@@ -52,10 +52,13 @@ class Lexer {
   bool LexSingleCharToken(char lookahead, Token &result);
   bool LexKeywordOrID(Token &result);
   bool LexKeyword(const std::string &word, Token &result);
+  bool LexComment(Token &result);
 
-  char getNextChar() {
-    char c = input_.get();
-    if (c == '\n') {
+  int getNextChar() {
+    int c = input_.get();
+    if (c == EOF) {
+      return c;
+    } else if (c == '\n') {
       ++line_;
       col_ = 1;
     } else {
@@ -65,6 +68,13 @@ class Lexer {
   }
 
   const Diagnostic &getDiag() const { return diag_; }
+  SourceLocation getCurrentLoc() const {
+    SourceLocation loc;
+    loc.line = line_;
+    loc.col = col_;
+    loc.filename = filename_;
+    return loc;
+  }
 
   const std::string filename_;
   std::ifstream input_;

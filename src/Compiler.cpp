@@ -4,6 +4,7 @@
 #include <iostream>
 #include <unordered_map>
 
+__SILENCE_LLVM_WARNINGS_START
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/Support/FileSystem.h"
@@ -12,6 +13,7 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
+__SILENCE_LLVM_WARNINGS_END
 
 namespace qwip {
 
@@ -72,24 +74,12 @@ llvm::Type *Compiler::FuncTypeToLLVMType(const FuncType &type) {
                                  /*isVarArg=*/type.isVarArg());
 }
 
-llvm::Type *Compiler::IDTypeToLLVMType(const IDType &type) {
-  const std::string &name = type.getName();
-  if (name[0] == 'i') {
-    // This could be an int.
-    const std::string int_part(name.begin() + 1, name.end());
-    unsigned size = std::stoul(int_part);
-    return llvm::IntegerType::get(llvm_context_, size);
-  }
-  if (name == "void") return llvm::Type::getVoidTy(llvm_context_);
-  if (llvm::StructType *named_type = getLLVMModule().getTypeByName(name))
-    return named_type;
-
-  std::cerr << "Unable to create an LLVM type from " << type.getName() << "\n";
-  return nullptr;
-}
-
 llvm::Type *Compiler::IntTypeToLLVMType(const IntType &type) {
   return llvm::IntegerType::get(llvm_context_, type.getNumBits());
+}
+
+llvm::Type *Compiler::VoidTypeToLLVMType(const VoidType &type) {
+  return llvm::Type::getVoidTy(llvm_context_);
 }
 
 llvm::Type *Compiler::StrTypeToLLVMType(const StrType &type) {
@@ -100,9 +90,16 @@ llvm::Type *Compiler::StrTypeToLLVMType(const StrType &type) {
 llvm::Type *Compiler::StructTypeToLLVMType(const StructType &type) {
   std::vector<llvm::Type *> llvm_types;
   for (const auto &type_ptr : type.getTypes()) {
-    llvm_types.push_back(toLLVMType(*type_ptr));
+    llvm::Type *member_type = toLLVMType(*type_ptr);
+    if (type_ptr->getKind() == TYPE_FUNC)
+      member_type = llvm::PointerType::getUnqual(member_type);
+    llvm_types.push_back(member_type);
   }
   return llvm::StructType::get(llvm_context_, llvm_types);
+}
+
+llvm::Type *Compiler::EnumTypeToLLVMType(const EnumType &type) {
+  return llvm::IntegerType::get(llvm_context_, type.getNumBits());
 }
 
 llvm::Type *Compiler::PtrTypeToLLVMType(const PtrType &type) {
@@ -130,6 +127,11 @@ bool Compiler::CompileExternTypeDef(const ExternTypeDef &extern_typedef) {
   return CompileTypeDef(extern_typedef.getTypeDef(), builder);
 }
 
+bool Compiler::CompileExternEnumDef(const ExternEnumDef &extern_enumdef) {
+  llvm::IRBuilder<> builder(llvm_context_);
+  return CompileEnumDef(extern_enumdef.getEnumDef(), builder);
+}
+
 bool Compiler::CompileTypeDef(const TypeDef &type_def,
                               llvm::IRBuilder<> &builder) {
   std::vector<llvm::Type *> llvm_types;
@@ -155,6 +157,12 @@ bool Compiler::CompileTypeDef(const TypeDef &type_def,
   }
 
   llvm::StructType::create(llvm_context_, llvm_types, type_def.getName());
+  return true;
+}
+
+bool Compiler::CompileEnumDef(const EnumDef &enum_def,
+                              llvm::IRBuilder<> &builder) {
+  // Do nothing. This is just an int type.
   return true;
 }
 
@@ -246,7 +254,9 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef, llvm::IRBuilder<> &) {
 
   if (!entry_block->getTerminator()) {
     // Return null by default.
-    std::cerr << "No explicit return provided. Returning 0.\n";
+    diag_.Warn(funcdef.getLoc())
+        << "No explicit return provided for function '"
+        << funcdef.getDecl().getName() << "'. Returning 0 by default.";
     builder.CreateRet(llvm::Constant::getNullValue(func->getReturnType()));
   }
 
@@ -325,6 +335,16 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
+bool Compiler::CompileEnumLiteral(const EnumLiteral &expr,
+                                  llvm::IRBuilder<> &builder,
+                                  llvm::Value *&result) {
+  result = llvm::ConstantInt::get(
+      llvm_context_,
+      llvm::APInt(/*num_bits=*/expr.ViewType().getNumBits(), expr.getVal(),
+                  /*isSigned=*/true));
+  return true;
+}
+
 llvm::Value *Compiler::getAddrOfMemberAccess(const MemberAccess &expr,
                                              llvm::IRBuilder<> &builder) {
   llvm::Value *base_val;
@@ -368,6 +388,9 @@ bool Compiler::CompileBinOp(const BinOp &expr, llvm::IRBuilder<> &builder,
       break;
     case BINOP_LE:
       result = builder.CreateICmpSLE(lhs_val, rhs_val);
+      break;
+    case BINOP_EQ:
+      result = builder.CreateICmpEQ(lhs_val, rhs_val);
       break;
     case BINOP_SUB:
       result = builder.CreateSub(lhs_val, rhs_val);

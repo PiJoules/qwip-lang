@@ -1,8 +1,10 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include <algorithm>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "Diagnostics.h"
@@ -30,6 +32,8 @@ enum TypeKind {
 
 std::string TypeKindToString(TypeKind kind);
 std::string NodeKindToString(NodeKind kind);
+
+constexpr unsigned kDefaultEnumNumBits = 32;
 
 class Type {
  public:
@@ -79,7 +83,7 @@ class StructType : public Type {
  public:
   StructType() {}
   StructType(std::vector<std::unique_ptr<Type>> &types,
-             const std::unordered_map<std::string, unsigned> &idxs)
+             const std::unordered_map<std::string, size_t> &idxs)
       : types_(std::move(types)), idxs_(idxs) {}
 
   TypeKind getKind() const override { return TYPE_STRUCT; }
@@ -95,16 +99,16 @@ class StructType : public Type {
     idxs_[name] = types_.size();
     types_.push_back(std::move(type));
   }
-  const Type &getMember(unsigned i) const { return *(types_[i]); }
+  const Type &getMember(size_t i) const { return *(types_[i]); }
   const Type &getMember(const std::string &name) const {
     return getMember(idxs_.at(name));
   }
-  unsigned getIndex(const std::string &name) const { return idxs_.at(name); }
+  size_t getIndex(const std::string &name) const { return idxs_.at(name); }
   const std::vector<std::unique_ptr<Type>> &getTypes() const { return types_; }
 
  private:
   std::vector<std::unique_ptr<Type>> types_;
-  std::unordered_map<std::string, unsigned> idxs_;
+  std::unordered_map<std::string, size_t> idxs_;
 };
 
 class StrType : public Type {
@@ -133,18 +137,38 @@ class IntType : public Type {
   unsigned numbits_;
 };
 
-class IDType : public Type {
+class VoidType : public Type {
  public:
-  IDType(const std::string &name) : name_(name) {}
-
-  TypeKind getKind() const override { return TYPE_ID; }
-  const std::string &getName() const { return name_; }
+  TypeKind getKind() const override { return TYPE_VOID; }
   std::unique_ptr<Type> Clone() const override {
-    return std::unique_ptr<Type>(new IDType(name_));
+    return std::unique_ptr<Type>(new VoidType);
+  }
+};
+
+class EnumType : public Type {
+ public:
+  EnumType(const std::vector<std::string> &values,
+           unsigned num_bits = kDefaultEnumNumBits)
+      : values_(values), num_bits_(num_bits) {}
+  TypeKind getKind() const override { return TYPE_ENUM; }
+  std::unique_ptr<Type> Clone() const override {
+    return std::unique_ptr<Type>(new EnumType(values_, num_bits_));
+  }
+  unsigned getNumBits() const { return num_bits_; }
+  const std::vector<std::string> &getValues() const { return values_; }
+  bool getValue(const std::string &name, size_t &value) const {
+    for (size_t i = 0; i < values_.size(); ++i) {
+      if (values_[i] == name) {
+        value = i;
+        return true;
+      }
+    }
+    return false;
   }
 
  private:
-  std::string name_;
+  std::vector<std::string> values_;
+  unsigned num_bits_;
 };
 
 class PtrType : public Type {
@@ -260,6 +284,38 @@ class Int : public Expr {
   int val_;
 };
 
+class EnumLiteral : public Expr {
+ public:
+  EnumLiteral(SourceLocation loc, const std::string &name, size_t val,
+              std::unique_ptr<Type> &enum_type)
+      : Expr(loc), name_(name), val_(val), type_(std::move(enum_type)) {
+    Initialize();
+  }
+  EnumLiteral(SourceLocation loc, const std::string &name, size_t val,
+              const Type &enum_type)
+      : Expr(loc), name_(name), val_(val), type_(enum_type.Clone()) {
+    Initialize();
+  }
+  NodeKind getKind() const override { return NODE_ENUM_LITERAL; }
+  std::unique_ptr<Type> getType() const override { return type_->Clone(); }
+  const EnumType &ViewType() const { return type_->getAs<EnumType>(); }
+  size_t getVal() const { return val_; }
+  const std::string &getName() const { return name_; }
+
+ private:
+  void Initialize() {
+    assert_ptr(type_);
+    assert(type_->getKind() == TYPE_ENUM);
+    size_t dummy;
+    assert(type_->getAs<EnumType>().getValue(name_, dummy) &&
+           "The name for this literal is not in the enum definition.");
+  }
+
+  std::string name_;
+  size_t val_;
+  std::unique_ptr<Type> type_;
+};
+
 class ID : public Expr {
  public:
   ID(const SourceLocation loc, const std::string &name,
@@ -285,6 +341,7 @@ class ID : public Expr {
 enum BinOpCode {
   BINOP_LT,
   BINOP_LE,
+  BINOP_EQ,
   BINOP_ADD,
   BINOP_SUB,
 };
@@ -308,6 +365,7 @@ class BinOp : public Expr {
     switch (op_) {
       case BINOP_LE:
       case BINOP_LT:
+      case BINOP_EQ:
         return std::make_unique<IntType>(/*numbits=*/32);
       case BINOP_ADD:
       case BINOP_SUB:
@@ -377,17 +435,25 @@ class PtrTypeNode : public TypeNode {
 
 class IDTypeNode : public TypeNode {
  public:
-  IDTypeNode(const SourceLocation loc, const std::string &name)
-      : TypeNode(loc), name_(name) {}
+  IDTypeNode(const SourceLocation loc, const std::string &name,
+             std::unique_ptr<Type> &underlying_type)
+      : TypeNode(loc),
+        name_(name),
+        underlying_type_(std::move(underlying_type)) {
+    assert_ptr(underlying_type_);
+  }
 
   NodeKind getKind() const override { return NODE_ID_TYPE; }
   const std::string &getName() const { return name_; }
   std::unique_ptr<Type> toType() const override {
-    return std::unique_ptr<Type>(new IDType(name_));
+    // return std::unique_ptr<Type>(new IDType(name_));
+    return underlying_type_->Clone();
   }
+  const Type &getType() const { return *underlying_type_; }
 
  private:
   std::string name_;
+  std::unique_ptr<Type> underlying_type_;
 };
 
 class Stmt : public Node {
@@ -459,6 +525,24 @@ class TypeDef : public Stmt {
  private:
   std::string name_;
   std::vector<std::unique_ptr<MemberDecl>> members_;
+};
+
+class EnumDef : public Stmt {
+ public:
+  EnumDef(const SourceLocation loc, const std::string &name,
+          const std::vector<std::string> &values,
+          unsigned num_bits = kDefaultEnumNumBits)
+      : Stmt(loc), name_(name), values_(values), num_bits_(num_bits) {}
+  NodeKind getKind() const override { return NODE_ENUMDEF; }
+  const std::string &getName() const { return name_; }
+  const std::vector<std::string> &getValues() const { return values_; }
+  EnumType getEnumType() const;
+  unsigned getNumBits() const { return num_bits_; }
+
+ private:
+  std::string name_;
+  std::vector<std::string> values_;
+  unsigned num_bits_;
 };
 
 class Param : public Node {
@@ -655,6 +739,7 @@ class Return : public Stmt {
 DEFINE_WRAPPER_NODE(ExternVarDecl, NODE_EXTERN_VARDECL, ExternDecl, VarDecl)
 DEFINE_WRAPPER_NODE(ExternVarDef, NODE_EXTERN_VARDEF, ExternDecl, VarDef)
 DEFINE_WRAPPER_NODE(ExternTypeDef, NODE_EXTERN_TYPEDEF, ExternDecl, TypeDef)
+DEFINE_WRAPPER_NODE(ExternEnumDef, NODE_EXTERN_ENUMDEF, ExternDecl, EnumDef)
 DEFINE_WRAPPER_NODE(ExternFuncDef, NODE_EXTERN_FUNCDEF, ExternDecl, FuncDef)
 DEFINE_WRAPPER_NODE(MemberVarDecl, NODE_MEMBER_VARDECL, MemberDecl, VarDecl)
 
@@ -663,15 +748,28 @@ typedef std::unordered_map<std::string, std::unique_ptr<Type>> VarMap;
 
 class Context {
  public:
-  Context() {}
+  Context(Context *parent_context = nullptr)
+      : parent_context_(parent_context) {}
+
+  // Returns nullptr if there is no parent context.
+  Context *getParentContext() const { return parent_context_; }
 
   const TypeMap &getTypes() const { return types_; }
   void addType(const std::string &type_name, const Type &type) {
     types_[type_name] = type.Clone();
   }
-  const Type *getType(const std::string &type_name) const {
-    auto foundtype = types_.find(type_name);
-    if (foundtype != types_.end()) return foundtype->second.get();
+  const Type *getType(const std::string &type_name) {
+    // Handle builtin types.
+    assert(!type_name.empty() && "Invalid type name");
+
+    if (const Type *builtin_type = getBuiltinType(type_name))
+      return builtin_type;
+
+    const Context *context = this;
+    while (context) {
+      if (const Type *type = context->getImmediateType(type_name)) return type;
+      context = context->getParentContext();
+    }
     return nullptr;
   }
 
@@ -679,15 +777,108 @@ class Context {
   void addVar(const std::string &varname, const Type &type) {
     vars_[varname] = type.Clone();
   }
+  void addEnumLiteral(const std::string &enum_name, const Type &type) {
+    addVar(enum_name, type);
+    enum_names_.insert(enum_name);
+  }
   const Type *getVarType(const std::string &varname) const {
-    auto foundtype = vars_.find(varname);
-    if (foundtype != vars_.end()) return foundtype->second.get();
+    const Context *context = this;
+    while (context) {
+      if (const Type *type = context->getImmediateVarType(varname)) return type;
+      context = context->getParentContext();
+    }
     return nullptr;
+  }
+  bool isEnumLiteral(const std::string &name) const {
+    const Context *context = this;
+    while (context) {
+      if (context->isImmediateEnumLiteral(name)) return true;
+      context = context->getParentContext();
+    }
+    return false;
+  }
+
+  void addChildContext(std::unique_ptr<Context> &context) {
+    child_contexts_.push_back(std::move(context));
+  }
+  const std::vector<std::unique_ptr<Context>> &getChildContexts() const {
+    return child_contexts_;
+  }
+  Context &getLastChildContext() const {
+    assert(!child_contexts_.empty());
+    return *child_contexts_.back();
   }
 
  private:
+  static bool isVoidType(const std::string &type_name) {
+    return type_name == "void";
+  }
+
+  static bool isIntType(const std::string &type_name, unsigned &i) {
+    if (type_name.size() < 2) return false;
+
+    if (type_name[0] != 'i') return false;
+
+    if (std::any_of(type_name.begin() + 1, type_name.end(),
+                    [](char c) { return !isdigit(c); }))
+      return false;
+
+    std::string sub_str(type_name.begin() + 1, type_name.end());
+    i = static_cast<unsigned>(std::stoul(sub_str));
+    return true;
+  }
+
+  const Type *getBuiltinType(const std::string &type_name) {
+    auto found_type = cached_types_.find(type_name);
+    if (found_type != cached_types_.end()) return found_type->second.get();
+
+    // After this point, the type was not created prior so we must make one.
+    if (isVoidType(type_name)) {
+      cached_types_.emplace(type_name, new VoidType);
+      return cached_types_.at(type_name).get();
+    }
+
+    unsigned i;
+    if (isIntType(type_name, i)) {
+      cached_types_.emplace(type_name, new IntType(i));
+      return cached_types_.at(type_name).get();
+    }
+
+    return nullptr;
+  }
+
+  const Type *getImmediateType(const std::string &type_name) const {
+    auto foundtype = types_.find(type_name);
+    if (foundtype != types_.end()) return foundtype->second.get();
+    return nullptr;
+  }
+
+  bool isImmediateEnumLiteral(const std::string &varname) const {
+    return enum_names_.find(varname) != enum_names_.end();
+  }
+
+  const Type *getImmediateVarType(const std::string &varname) const {
+    auto foundtype = vars_.find(varname);
+    if (foundtype != vars_.end()) {
+      const Type *type = foundtype->second.get();
+      // if (type->getKind() == TYPE_ID) {
+      //  //if (const Type *canon_type =
+      //  getType(type->getAs<IDType>().getName())) if (const Type *canon_type =
+      //  type->getAs<IDTypeNode>().getName())
+      //    return canon_type;
+      //}
+      return type;
+    }
+    return nullptr;
+  }
+
+  Context *parent_context_;
   TypeMap types_;
   VarMap vars_;
+  std::vector<std::unique_ptr<Context>> child_contexts_;
+  std::unordered_set<std::string> enum_names_;
+
+  static std::unordered_map<std::string, std::unique_ptr<Type>> cached_types_;
 };
 
 class Parser {
@@ -724,40 +915,46 @@ class Parser {
   bool TryToParseCompoundExpr(std::unique_ptr<Expr> &expr);
 
   Context &getContext() {
-    assert(!contexts_.empty() &&
-           "We have not parsed a module yet if there are no contexts on the "
-           "stack.");
-    return contexts_.back();
+    assert(current_context_ &&
+           "We have not parsed a module yet if the current context does not "
+           "point to any context.");
+    return *current_context_;
   }
+  const Context &getContext() const {
+    assert(current_context_ &&
+           "We have not parsed a module yet if the current context does not "
+           "point to any context.");
+    return *current_context_;
+  }
+
   const Type *getTypeForVar(const std::string &name) const {
-    for (unsigned i = 0; i < contexts_.size(); ++i) {
-      if (const Type *type =
-              contexts_.at(contexts_.size() - i - 1).getVarType(name)) {
-        // Resolve the type node if it is a typedef.
-        if (type->getKind() == TYPE_ID) {
-          if (const Type *canon_type = getType(type->getAs<IDType>().getName()))
-            return canon_type;
-        }
-        return type;
-      }
-    }
-    return nullptr;
+    return getContext().getVarType(name);
   }
-  const Type *getType(const std::string &name) const {
-    for (unsigned i = 0; i < contexts_.size(); ++i) {
-      if (const Type *type =
-              contexts_.at(contexts_.size() - i - 1).getType(name))
-        return type;
-    }
-    return nullptr;
+  const Type *getType(const std::string &name) {
+    return getContext().getType(name);
   }
-  void EnterScope() { contexts_.emplace_back(); }
-  void ExitScope() { contexts_.pop_back(); }
+
+  class ContextRAII {
+   public:
+    ContextRAII(Parser &parser) : parser_(parser) { parser_.EnterScope(); }
+    ~ContextRAII() { parser_.ExitScope(); }
+
+   private:
+    Parser &parser_;
+  };
+
+  void EnterScope() {
+    std::unique_ptr<Context> child_context(new Context(current_context_));
+    current_context_->addChildContext(child_context);
+    current_context_ = &current_context_->getLastChildContext();
+  }
+  void ExitScope() { current_context_ = getContext().getParentContext(); }
   const Diagnostic &getDiag() const { return diag_; }
 
   Lexer &lexer_;
   const Diagnostic diag_;
-  std::vector<Context> contexts_;
+  std::unique_ptr<Context> global_context_;
+  Context *current_context_ = nullptr;
 };
 
 }  // namespace qwip

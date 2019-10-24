@@ -16,7 +16,7 @@ TOKEN(TOK_ID)			// [A-Za-z_][A-Za-z0-9_]+
 TOKEN(TOK_RARROW)		// ->
 TOKEN(TOK_INT)			// 123
 TOKEN(TOK_STR)			// "abc"
-TOKEN(TOK_COMMENT)		// //
+TOKEN(TOK_COMMENT)		// // or /* */
 TOKEN(TOK_VARARG)		// ...
 
 KEYWORD(TOK_RET, 	"ret")			// ret
@@ -24,6 +24,7 @@ KEYWORD(TOK_TYPE, 	"type")			// type
 KEYWORD(TOK_IF,		"if")			// if
 KEYWORD(TOK_ELSE,	"else")			// else
 KEYWORD(TOK_WHILE,	"while")		// while
+KEYWORD(TOK_ENUM,	"enum")			// enum
 
 TOKEN_1CHAR(TOK_LPAR, 		'(')		// (
 TOKEN_1CHAR(TOK_RPAR, 		')')		// )
@@ -40,6 +41,7 @@ TOKEN_1CHAR(TOK_LT, 		'<')		// <
 TOKEN_1CHAR(TOK_ADD, 		'+')		// +
 TOKEN_1CHAR(TOK_SUB, 		'-')		// -, conflicts with ->
 TOKEN(TOK_LE)					// <=, conflicts with <
+TOKEN(TOK_EQ)					// ==, conflicts with =
 
 TOKEN(TOK_EOF)
 

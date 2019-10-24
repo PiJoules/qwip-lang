@@ -40,7 +40,10 @@ bool Parser::Parse(std::unique_ptr<Module> &result) {
 bool Parser::ParseModule(std::unique_ptr<Module> &result) {
   Token lookahead;
   TRY_PEEK(lexer_, lookahead);
-  EnterScope();
+
+  // Initialize this here only.
+  global_context_ = std::make_unique<Context>();
+  current_context_ = global_context_.get();
 
   std::vector<std::unique_ptr<ExternDecl>> decls;
   while (lookahead.kind != TOK_EOF) {
@@ -52,6 +55,10 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
       std::unique_ptr<ExternTypeDef> externtypedef;
       if (!ParseExternTypeDef(externtypedef)) return false;
       decls.push_back(std::move(externtypedef));
+    } else if (lookahead.kind == TOK_ENUM) {
+      std::unique_ptr<ExternEnumDef> externenumdef;
+      if (!ParseExternEnumDef(externenumdef)) return false;
+      decls.push_back(std::move(externenumdef));
     } else {
       diag_.Err(lookahead.loc)
           << "Unexpected token found. External declarations in a module should "
@@ -61,7 +68,6 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
 
     TRY_PEEK(lexer_, lookahead);
   }
-  ExitScope();
 
   SourceLocation loc;
   loc.line = 1;
@@ -85,6 +91,75 @@ bool Parser::ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result) {
     std::unique_ptr<VarDecl> vardecl(static_cast<VarDecl *>(func.release()));
     result = std::make_unique<ExternVarDecl>(vardecl);
   }
+  return true;
+}
+
+bool Parser::ParseExternEnumDef(std::unique_ptr<ExternEnumDef> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);  // enum
+  assert(tok.kind == TOK_ENUM &&
+         "Only call ParseExternEnumDef if the previous token was a 'enum'.");
+  SourceLocation enumloc = tok.loc;
+
+  // <id>
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_ID) {
+    diag_.Err(tok.loc) << "Expected the name of the custom enum.";
+    return false;
+  }
+  std::string name = tok.chars;
+
+  // {
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_LBRACE) {
+    diag_.Err(tok.loc) << "Expected an opening '{' in the custom enum.";
+    return false;
+  }
+
+  // Enum values
+  std::vector<std::string> values;
+  while (1) {
+    Token lookahead;
+    TRY_PEEK(lexer_, lookahead);
+
+    if (lookahead.kind == TOK_RBRACE) break;
+
+    TRY_PEEK(lexer_, tok);
+    if (tok.kind != TOK_ID) {
+      diag_.Err(tok.loc) << "Expected a name for a value in this enum.";
+      return false;
+    }
+    TRY_LEX(lexer_, tok);
+    values.push_back(tok.chars);
+
+    // Consume a ','
+    TRY_PEEK(lexer_, tok);
+    if (tok.kind == TOK_COMMA) {
+      TRY_LEX(lexer_, tok);
+    } else if (tok.kind == TOK_RBRACE) {
+      break;
+    } else {
+      diag_.Err(tok.loc) << "Expected a ',' or the end brace '}' to indicate "
+                            "the end of an enum definition.";
+      return false;
+    }
+  }
+
+  // }
+  TRY_LEX(lexer_, tok);
+  assert(tok.kind == TOK_RBRACE &&
+         "Should only break out of the previous loop if we ran into a closing "
+         "brace.");
+
+  auto enum_def = std::make_unique<EnumDef>(enumloc, name, values);
+  EnumType type = enum_def->getEnumType();
+  getContext().addType(name, type);
+
+  for (unsigned i = 0; i < values.size(); ++i) {
+    getContext().addEnumLiteral(values[i], type);
+  }
+
+  result = std::make_unique<ExternEnumDef>(enum_def);
   return true;
 }
 
@@ -470,7 +545,13 @@ bool Parser::ParseTypeNode(std::unique_ptr<TypeNode> &result) {
     return false;
   }
 
-  result = std::make_unique<IDTypeNode>(tok.loc, tok.chars);
+  const Type *canonical_type = getContext().getType(tok.chars);
+  if (!canonical_type) {
+    diag_.Err(tok.loc) << "Unknown type '" << tok.chars << "'.";
+    return false;
+  }
+  std::unique_ptr<Type> type_clone = canonical_type->Clone();
+  result = std::make_unique<IDTypeNode>(tok.loc, tok.chars, type_clone);
 
   // Check for pointers
   TRY_PEEK(lexer_, lookahead);
@@ -584,6 +665,9 @@ static bool BinOpCodeFromTokenKind(TokenKind kind, BinOpCode &op) {
     case TOK_SUB:
       op = BINOP_SUB;
       return true;
+    case TOK_EQ:
+      op = BINOP_EQ;
+      return true;
     default:
       return false;
   }
@@ -628,6 +712,8 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
 
   return true;
 }
+
+EnumType EnumDef::getEnumType() const { return EnumType(values_, num_bits_); }
 
 StructType TypeDef::getStructType() const {
   StructType structtype;
@@ -715,9 +801,18 @@ bool Parser::ParseSingleExprAfterID(const Token &id_tok,
     diag_.Err(exprloc) << "Unknown variable '" << name << "'.";
     return false;
   }
-
-  std::unique_ptr<ID> caller(new ID(exprloc, name, *type));
-  result = std::move(caller);
+  if (getContext().isEnumLiteral(name)) {
+    const EnumType &enum_type = type->getAs<EnumType>();
+    size_t value;
+    assert(enum_type.getValue(name, value) &&
+           "Expected this variable to be part of the enum type.");
+    std::unique_ptr<EnumLiteral> literal(
+        new EnumLiteral(exprloc, name, value, *type));
+    result = std::move(literal);
+  } else {
+    std::unique_ptr<ID> caller(new ID(exprloc, name, *type));
+    result = std::move(caller);
+  }
   return true;
 }
 
@@ -756,5 +851,7 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       return false;
   }
 }
+
+std::unordered_map<std::string, std::unique_ptr<Type>> Context::cached_types_;
 
 }  // namespace qwip

@@ -1,4 +1,22 @@
+/* Multiline
+Comments */
+
+// Single line comments.
+
+// Globals
+global_var: i32 = 10;
+
+// Declaring global functions to be used.
+printf: (fmt: i8*, ...) -> void;
+
+// Enums. The first value always starts at 0.
+enum Days {SUN, MON, TUE, WED, THU, FRI, SAT}
+
+global_day: Days = WED;  // Evaluates to 3 as an integer.
+
 // Everything starts in main
 main: () -> i32 {
+  printf("global_day is Wednesday? %d\n", global_day == WED);
 
+  ret 0;
 }

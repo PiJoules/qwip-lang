@@ -23,7 +23,7 @@ bool Lexer::Lex(Token &result) {
   }
 
   std::string buffer;
-  char next_char = input_.peek();
+  int next_char = input_.peek();
   result.loc.filename = filename_;
 
   // Handle EOF, whitespace, or comments. We skip these tokens.
@@ -39,28 +39,12 @@ bool Lexer::Lex(Token &result) {
         next_char = input_.peek();
       }
     } else if (next_char == '/') {
-      std::string comment;
-      result.loc.line = line_;
-      result.loc.col = col_;
-      getNextChar();
-      char c = getNextChar();
-      if (c != '/') {
-        getDiag().Err(result.loc) << "Expected a comment to start with '//'.";
-        return false;
-      }
+      if (!LexComment(result)) return false;
 
-      // Skip until the end of the line.
-      next_char = getNextChar();
-      while (next_char != '\n' && next_char != EOF) {
-        comment += next_char;
-        next_char = getNextChar();
-      }
-
-      if (lex_comments_) {
-        result.kind = TOK_COMMENT;
-        result.chars = comment;
-        return true;
-      }
+      // The result is a Comment token at this point. Exit early if we want to
+      // track comments. Otherwise just continue to check for more skippable
+      // tokens.
+      if (lex_comments_) return true;
     } else {
       // Nothing else to skip.
       break;
@@ -119,10 +103,23 @@ bool Lexer::Lex(Token &result) {
     result.kind = TOK_LT;
     result.chars = "<";
     return true;
+  } else if (next_char == '=') {
+    getNextChar();
+    next_char = input_.peek();
+    if (next_char == '=') {
+      getNextChar();
+      result.kind = TOK_EQ;
+      result.chars = "==";
+      return true;
+    }
+    result.kind = TOK_ASSIGN;
+    result.chars = "=";
+    return true;
   }
 
   // Handle single char tokens.
-  if (LexSingleCharToken(next_char, result)) return true;
+  assert(next_char != EOF && "EOFs should've been handled earlier.");
+  if (LexSingleCharToken(static_cast<char>(next_char), result)) return true;
 
   if (next_char == '"') return LexString(result);
 
@@ -153,12 +150,12 @@ bool Lexer::LexSingleCharToken(char lookahead, Token &result) {
 }
 
 bool Lexer::LexString(Token &result) {
-  char c = getNextChar();
+  int c = getNextChar();
   assert(
       c == '"' &&
       "Expected a double quote as the first character off the input_ stream.");
 
-  char next_char = input_.peek();
+  int next_char = input_.peek();
   result.chars.clear();
   while (next_char != '"') {
     if (next_char == '\\') {
@@ -171,11 +168,15 @@ bool Lexer::LexString(Token &result) {
         case 't':
           result.chars.push_back('\t');
           break;
+        case EOF:
+          getDiag().Err(getCurrentLoc())
+              << "Reached end of file. Could not finish string.";
+          return false;
         default:
-          result.chars.push_back(next_char);
+          result.chars.push_back(static_cast<char>(next_char));
       }
     } else {
-      result.chars.push_back(getNextChar());
+      result.chars.push_back(static_cast<char>(getNextChar()));
     }
     next_char = input_.peek();
   }
@@ -187,16 +188,16 @@ bool Lexer::LexString(Token &result) {
 }
 
 bool Lexer::LexInt(Token &result) {
-  char c = getNextChar();
+  int c = getNextChar();
   assert(isdigit(c) &&
          "Expeted the first character off the stream tp be a digit.");
 
-  char next_char = input_.peek();
+  int next_char = input_.peek();
   result.chars.clear();
-  result.chars.push_back(c);
+  result.chars.push_back(static_cast<char>(c));
 
   while (isdigit(next_char)) {
-    result.chars.push_back(getNextChar());
+    result.chars.push_back(static_cast<char>(getNextChar()));
     next_char = input_.peek();
   }
 
@@ -206,17 +207,17 @@ bool Lexer::LexInt(Token &result) {
 }
 
 bool Lexer::LexKeywordOrID(Token &result) {
-  char c = getNextChar();
+  int c = getNextChar();
   assert((isalpha(c) || c == '_') &&
          "Expected the first character in the input_ to be an underscore or "
          "letter.");
 
-  char next_char = input_.peek();
+  int next_char = input_.peek();
   std::string buffer;
-  buffer.push_back(c);
+  buffer.push_back(static_cast<char>(c));
 
   while (isalpha(next_char) || isdigit(next_char) || next_char == '_') {
-    buffer.push_back(getNextChar());
+    buffer.push_back(static_cast<char>(getNextChar()));
     next_char = input_.peek();
   }
 
@@ -224,6 +225,51 @@ bool Lexer::LexKeywordOrID(Token &result) {
 
   result.kind = TOK_ID;
   result.chars = buffer;
+  return true;
+}
+
+bool Lexer::LexComment(Token &result) {
+  int c = getNextChar();
+  assert(c == '/' && "Expected the next character to be a '/'");
+
+  std::string comment;
+  result.loc.line = line_;
+  result.loc.col = col_;
+  c = getNextChar();
+
+  if (c == '*') {
+    // Multiline comment. Continue until we find the ending */
+    while (true) {
+      int next_char = getNextChar();
+
+      if (next_char == EOF) {
+        getDiag().Err(getCurrentLoc())
+            << "Could not find the end of the last multiline comment.";
+        return false;
+      } else if (next_char == '*' && input_.peek() == '/') {
+        // End of the multiline comment. Consume the next token.
+        getNextChar();
+        break;
+      }
+
+      comment += static_cast<char>(next_char);
+    }
+  } else if (c != '/') {
+    getDiag().Err(result.loc) << "Expected a comment to start with '//'.";
+    return false;
+  } else {
+    // Single line comment. Skip until the end of the line.
+    int next_char = getNextChar();
+    while (next_char != '\n' && next_char != EOF) {
+      comment += static_cast<char>(next_char);
+      next_char = getNextChar();
+    }
+  }
+
+  if (lex_comments_) {
+    result.kind = TOK_COMMENT;
+    result.chars = comment;
+  }
   return true;
 }
 

@@ -1,6 +1,7 @@
 #ifndef DIAGNOSTICS_H
 #define DIAGNOSTICS_H
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -10,7 +11,7 @@ namespace qwip {
 struct SourceLocation {
   unsigned line = 0;
   unsigned col = 0;
-  std::string filename;
+  std::string filename;  // Can be empty to indicate no source file.
 
   bool isValid() const { return line > 0 && col > 0; }
   std::string toString() const {
@@ -38,10 +39,13 @@ enum DiagKind {
   DIAG_NOTE,
 };
 
+// Number of max characters to display after the source location in a file.
+constexpr size_t kMaxDiagLineChars = 80;
+
 class Message {
  public:
   Message(std::ostream &out, const SourceLocation &loc, DiagKind kind)
-      : out_(out) {
+      : out_(out), loc_(loc) {
     out_ << loc.toString() << ": ";
     switch (kind) {
       case DIAG_ERR:
@@ -71,6 +75,10 @@ class Message {
     out_ << c;
     return *this;
   }
+  Message &operator<<(int i) {
+    out_ << i;
+    return *this;
+  }
   Message &operator<<(size_t size) {
     out_ << size;
     return *this;
@@ -80,10 +88,30 @@ class Message {
     // If RVO is not enabled, this may be printed on returning in the builder,
     // but this isn't so bad.
     out_ << "\n";
+
+    if (!loc_.isValid()) return;
+
+    // Attempt to print the line this refers to.
+    std::ifstream loc_file(loc_.filename);
+    if (!loc_file.good()) return;
+
+    unsigned line_no = 0;
+    std::string line;
+    while (line_no < loc_.line - 1) {
+      std::getline(loc_file, line);
+      ++line_no;
+    }
+    std::getline(loc_file, line);
+    out_ << line << "\n";
+
+    loc_file.ignore(loc_.col - 1);
+    std::string padding(loc_.col - 1, ' ');
+    out_ << padding << "^\n";
   }
 
  private:
   std::ostream &out_;
+  const SourceLocation &loc_;
 };
 
 class Diagnostic {
