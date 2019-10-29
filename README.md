@@ -4,6 +4,17 @@ master branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.
 
 dev branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang)
 
+```
+printf: (fmt: i8*, ...) -> void;
+
+main: (argc: i32, argv: i8**) -> i32 {
+  printf("Hello World!\n");
+  ret 0;
+}
+```
+
+See more in `examples/`.
+
 ## Building and Running
 
 ### Requirements

@@ -11,7 +11,7 @@
 
 namespace qwip {
 
-std::string TypeKindToString(TypeKind kind) {
+static std::string TypeKindToString(TypeKind kind) {
   switch (kind) {
 #define TYPE(Kind, Class) \
   case Kind:              \
@@ -490,6 +490,17 @@ bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
     TRY_LEX(lexer_, tok);
     std::unique_ptr<Expr> init;
     if (!ParseExpr(init)) return false;
+
+    std::unique_ptr<Type> decl_type = decl->getType();
+    std::unique_ptr<Type> init_type = init->getType();
+    if (*decl_type != *init_type) {
+      diag_.Err(decl->getLoc())
+          << "The initializer type (" << init_type->toString()
+          << ") does not match the declaration type (" << decl_type->toString()
+          << ").";
+      return false;
+    }
+
     result = std::make_unique<VarDef>(decl, init);
 
     // ;
@@ -824,6 +835,40 @@ bool Parser::ParseStr(std::unique_ptr<Str> &result) {
   return true;
 }
 
+template <typename T>
+static T ParseInt(const std::string_view &str,
+                  unsigned *num_chars_parsed = nullptr) {
+  T result = 0;
+  unsigned i = 0;
+  assert(isdigit(str.front()));
+  do {
+    result *= 10;
+    result += str[i] - '0';
+    ++i;
+  } while (i < str.size() && isdigit(str[i]));
+  if (num_chars_parsed) *num_chars_parsed = i;
+  return result;
+}
+
+std::unique_ptr<Int> Int::fromToken(const Token &tok) {
+  const std::string &str = tok.chars;
+  assert(!str.empty());
+
+  unsigned i;
+  int64_t result = ParseInt<int64_t>(str, &i);
+  unsigned num_bits;
+  if (str[i] == 'i') {
+    ++i;
+    num_bits = ParseInt<unsigned>(std::string_view(str.c_str() + i));
+  } else if (i == str.size()) {
+    num_bits = kDefaultIntNumBits;
+  } else {
+    UNREACHABLE("Did not finish parsing the whole string.");
+  }
+
+  return std::make_unique<Int>(tok.loc, result, num_bits);
+}
+
 bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
   Token lookahead, tok;
   TRY_PEEK(lexer_, lookahead);
@@ -831,8 +876,7 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
   switch (lookahead.kind) {
     case TOK_INT: {
       TRY_LEX(lexer_, tok);
-      int val = std::stoi(tok.chars);
-      result = std::make_unique<Int>(tok.loc, val);
+      result = Int::fromToken(tok);
       return true;
     }
     case TOK_STR: {
@@ -845,11 +889,45 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       TRY_LEX(lexer_, tok);
       return ParseSingleExprAfterID(tok, result);
     }
+    case TOK_TRUE: {
+      TRY_LEX(lexer_, tok);
+      result = std::make_unique<Bool>(tok.loc, true);
+      return true;
+    }
+    case TOK_FALSE: {
+      TRY_LEX(lexer_, tok);
+      result = std::make_unique<Bool>(tok.loc, false);
+      return true;
+    }
     default:
       diag_.Err(lookahead.loc) << "Expected an expression. Found "
                                << TokenKindAsString(lookahead.kind) << ".";
       return false;
   }
+}
+
+bool PtrType::isEqual(const Type &other) const {
+  if (other.getKind() == TYPE_STR) {
+    if (getPointeeType().getKind() != TYPE_INT) return false;
+    return getPointeeType().getAs<IntType>().getNumBits() == kNumCharBits;
+  }
+
+  if (getKind() != other.getKind()) return false;
+  return getPointeeType() == other.getAs<PtrType>().getPointeeType();
+}
+
+bool StrType::isEqual(const Type &other) const {
+  if (other.getKind() == TYPE_PTR) {
+    const auto &other_ptr = other.getAs<PtrType>();
+    const Type &elem_type = other_ptr.getPointeeType();
+    if (elem_type.getKind() != TYPE_INT) return false;
+
+    const auto &int_type = elem_type.getAs<IntType>();
+    return int_type.getNumBits() == kNumCharBits;
+  }
+
+  if (getKind() != other.getKind()) return false;
+  return size_ == other.getAs<StrType>().getSize();
 }
 
 std::unordered_map<std::string, std::unique_ptr<Type>> Context::cached_types_;

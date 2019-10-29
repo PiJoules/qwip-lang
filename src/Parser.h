@@ -30,21 +30,36 @@ enum TypeKind {
 #include "Types.def"
 };
 
-std::string TypeKindToString(TypeKind kind);
 std::string NodeKindToString(NodeKind kind);
 
+constexpr unsigned kDefaultIntNumBits = 32;
 constexpr unsigned kDefaultEnumNumBits = 32;
+constexpr unsigned kNumCharBits = 8;
+constexpr unsigned kNumBitsPerByte = 8;
 
 class Type {
  public:
   virtual ~Type() {}
   virtual TypeKind getKind() const = 0;
   virtual std::unique_ptr<Type> Clone() const = 0;
+  virtual void Dump(std::ostream &out) const = 0;
 
+  std::string toString() const {
+    std::stringstream out;
+    Dump(out);
+    return out.str();
+  }
+
+  // TODO: Add each of the node kinds as a static member of the class so we can
+  // also assert here the type we are converting to is the same type as this.
   template <typename T>
   const T &getAs() const {
     return static_cast<const T &>(*this);
   }
+
+  virtual bool isEqual(const Type &other) const = 0;
+  bool operator==(const Type &other) const { return isEqual(other); }
+  bool operator!=(const Type &other) const { return !isEqual(other); }
 };
 
 class FuncType : public Type {
@@ -58,11 +73,27 @@ class FuncType : public Type {
     assert_ptr_vector(arg_types_);
   }
 
+  void Dump(std::ostream &out) const override {
+    // (args) -> ret
+    out << "(";
+
+    if (!arg_types_.empty()) arg_types_.front()->Dump(out);
+
+    for (unsigned i = 2; i <= arg_types_.size(); ++i) {
+      out << ", ";
+      arg_types_[i]->Dump(out);
+    }
+
+    out << ") -> ";
+    ret_type_->Dump(out);
+  }
+
   TypeKind getKind() const override { return TYPE_FUNC; }
   const Type &getReturnType() const { return *ret_type_; }
   const std::vector<std::unique_ptr<Type>> &getArgTypes() const {
     return arg_types_;
   }
+  const Type &getArgType(unsigned i) const { return *(arg_types_[i]); }
   bool isVarArg() const { return isvararg_; }
   std::unique_ptr<Type> Clone() const override {
     std::vector<std::unique_ptr<Type>> args;
@@ -73,12 +104,28 @@ class FuncType : public Type {
     return std::unique_ptr<Type>(new FuncType(ret_type, args, isvararg_));
   }
 
+  bool isEqual(const Type &other) const override {
+    if (getKind() != other.getKind()) return false;
+
+    const FuncType &other_func = other.getAs<FuncType>();
+    if (*ret_type_ != other_func.getReturnType()) return false;
+
+    if (arg_types_.size() != other_func.getArgTypes().size()) return false;
+
+    for (unsigned i = 0; i < arg_types_.size(); ++i) {
+      if (getArgType(i) != other_func.getArgType(i)) return false;
+    }
+
+    return isvararg_ == other_func.isVarArg();
+  }
+
  private:
   std::unique_ptr<Type> ret_type_;
   std::vector<std::unique_ptr<Type>> arg_types_;
   bool isvararg_;
 };
 
+// TODO: Add the name of the struct as a part of the constructor.
 class StructType : public Type {
  public:
   StructType() {}
@@ -95,6 +142,21 @@ class StructType : public Type {
     return std::unique_ptr<StructType>(new StructType(types, idxs_));
   }
 
+  // TODO: Print out the name ones it is a part of the struct unstead of the
+  // individual members.
+  void Dump(std::ostream &out) const override {
+    out << "{";
+
+    if (!types_.empty()) types_.front()->Dump(out);
+
+    for (unsigned i = 2; i <= types_.size(); ++i) {
+      out << ", ";
+      types_[i]->Dump(out);
+    }
+
+    out << "}";
+  }
+
   void addMember(const std::string &name, std::unique_ptr<Type> &type) {
     idxs_[name] = types_.size();
     types_.push_back(std::move(type));
@@ -105,6 +167,19 @@ class StructType : public Type {
   }
   size_t getIndex(const std::string &name) const { return idxs_.at(name); }
   const std::vector<std::unique_ptr<Type>> &getTypes() const { return types_; }
+
+  bool isEqual(const Type &other) const override {
+    if (getKind() != other.getKind()) return false;
+
+    const auto &other_struct = other.getAs<StructType>();
+    if (types_.size() != other_struct.getTypes().size()) return false;
+
+    for (unsigned i = 0; i < types_.size(); ++i) {
+      if (getMember(i) != other_struct.getMember(i)) return false;
+    }
+
+    return true;
+  }
 
  private:
   std::vector<std::unique_ptr<Type>> types_;
@@ -120,6 +195,10 @@ class StrType : public Type {
     return std::unique_ptr<Type>(new StrType(size_));
   }
 
+  void Dump(std::ostream &out) const override { out << "i8[" << size_ << "]"; }
+
+  bool isEqual(const Type &other) const override;
+
  private:
   unsigned size_;
 };
@@ -133,6 +212,13 @@ class IntType : public Type {
     return std::unique_ptr<Type>(new IntType(numbits_));
   }
 
+  void Dump(std::ostream &out) const override { out << "i" << numbits_; }
+
+  bool isEqual(const Type &other) const override {
+    if (getKind() != other.getKind()) return false;
+    return numbits_ == other.getAs<IntType>().getNumBits();
+  }
+
  private:
   unsigned numbits_;
 };
@@ -143,19 +229,41 @@ class VoidType : public Type {
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new VoidType);
   }
+
+  void Dump(std::ostream &out) const override { out << "void"; }
+
+  bool isEqual(const Type &other) const override {
+    return getKind() == other.getKind();
+  }
 };
 
+// TODO: Add the name of the enum as a parameter.
 class EnumType : public Type {
  public:
   EnumType(const std::vector<std::string> &values,
            unsigned num_bits = kDefaultEnumNumBits)
       : values_(values), num_bits_(num_bits) {}
+
+  void Dump(std::ostream &out) const override {
+    out << "{";
+
+    if (!values_.empty()) out << values_.front();
+
+    for (unsigned i = 2; i <= values_.size(); ++i) {
+      out << ", ";
+      out << values_[i];
+    }
+
+    out << "}";
+  }
+
   TypeKind getKind() const override { return TYPE_ENUM; }
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new EnumType(values_, num_bits_));
   }
   unsigned getNumBits() const { return num_bits_; }
   const std::vector<std::string> &getValues() const { return values_; }
+  const std::string &getValue(unsigned i) const { return values_[i]; }
   bool getValue(const std::string &name, size_t &value) const {
     for (size_t i = 0; i < values_.size(); ++i) {
       if (values_[i] == name) {
@@ -164,6 +272,19 @@ class EnumType : public Type {
       }
     }
     return false;
+  }
+
+  bool isEqual(const Type &other) const override {
+    if (getKind() != other.getKind()) return false;
+
+    const EnumType &other_enum = other.getAs<EnumType>();
+    if (values_.size() != other_enum.getValues().size()) return false;
+
+    for (unsigned i = 0; i < values_.size(); ++i) {
+      if (getValue(i) != other_enum.getValue(i)) return false;
+    }
+
+    return num_bits_ == other_enum.getNumBits();
   }
 
  private:
@@ -177,12 +298,19 @@ class PtrType : public Type {
     assert_ptr(pointee_);
   }
 
+  void Dump(std::ostream &out) const override {
+    pointee_->Dump(out);
+    out << "*";
+  }
+
   TypeKind getKind() const override { return TYPE_PTR; }
   const Type &getPointeeType() const { return *pointee_; }
   std::unique_ptr<Type> Clone() const override {
     auto pointee = pointee_->Clone();
     return std::unique_ptr<Type>(new PtrType(pointee));
   }
+
+  bool isEqual(const Type &other) const override;
 
  private:
   std::unique_ptr<Type> pointee_;
@@ -270,18 +398,45 @@ class Str : public Expr {
   std::string val_;
 };
 
+// All ints are signed by default for now.
 class Int : public Expr {
  public:
-  Int(const SourceLocation loc, int i) : Expr(loc), val_(i) {}
-  NodeKind getKind() const override { return NODE_INT; }
-  std::unique_ptr<Type> getType() const override {
-    return std::make_unique<IntType>(sizeof(val_));
+  Int(const SourceLocation loc, int64_t val,
+      unsigned num_bits = kDefaultIntNumBits)
+      : Expr(loc), num_bits_(num_bits), val_(val) {
+    if (num_bits == 1) {
+      assert((val == 0 || val == 1) &&
+             "Expected an int of 1 bit to have a value of 0 or 1.");
+    } else if (num_bits < 64) {
+      // If num_bits >= 64, then the value will always fit in 64 bits.
+      assert(num_bits && "Expected a non-zero number of bits.");
+      assert(num_bits <= 64 && "An Int can hold no more than 64 bits.");
+      assert(val < ((INT64_C(1) << (num_bits - 1)) - 1) &&
+             "The assigned value cannot fit in the desired bit width.");
+      assert(val >= -(INT64_C(1) << (num_bits - 1)) &&
+             "The assigned value cannot fit in the desired bit width.");
+    }
   }
 
-  int getVal() const { return val_; }
+  static std::unique_ptr<Int> fromToken(const Token &tok);
+
+  NodeKind getKind() const override { return NODE_INT; }
+  std::unique_ptr<Type> getType() const override {
+    return std::make_unique<IntType>(num_bits_);
+  }
+
+  int64_t getVal() const { return val_; }
+  unsigned getNumBits() const { return num_bits_; }
 
  private:
-  int val_;
+  unsigned num_bits_;
+  int64_t val_;
+};
+
+class Bool : public Int {
+ public:
+  Bool(const SourceLocation loc, bool b) : Int(loc, b, /*num_bits=*/1) {}
+  NodeKind getKind() const override { return NODE_BOOL; }
 };
 
 class EnumLiteral : public Expr {
@@ -489,6 +644,12 @@ class VarDef : public Stmt {
       : Stmt(decl->getLoc()), decl_(std::move(decl)), init_(std::move(init)) {
     assert_ptr(decl_);
     assert_ptr(init_);
+
+    std::unique_ptr<Type> decl_type = decl_->getType();
+    std::unique_ptr<Type> init_type = init_->getType();
+    assert(*decl_type == *init_type &&
+           "Expected the types of the variable declaration and the initializer "
+           "to be the same");
   }
 
   NodeKind getKind() const override { return NODE_VARDEF; }

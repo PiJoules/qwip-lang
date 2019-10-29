@@ -304,6 +304,14 @@ bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
+bool Compiler::CompileBool(const Bool &expr, llvm::IRBuilder<> &builder,
+                           llvm::Value *&result) {
+  result = llvm::ConstantInt::get(llvm_context_,
+                                  llvm::APInt(/*num_bits=*/1, expr.getVal(),
+                                              /*isSigned=*/true));
+  return true;
+}
+
 llvm::Value *Compiler::getAddrOfVariable(const std::string &name,
                                          llvm::Function *func) {
   // Check locals first.

@@ -57,64 +57,71 @@ bool Lexer::Lex(Token &result) {
   result.loc.col = col_;
 
   // Handle RARROW early since it can conflict when lexing SUB.
-  if (next_char == '-') {
-    getNextChar();
-    next_char = input_.peek();
-    if (next_char == '>') {
+  switch (next_char) {
+    case '-': {
       getNextChar();
-      result.kind = TOK_RARROW;
-      result.chars = "->";
+      next_char = input_.peek();
+      if (next_char == '>') {
+        getNextChar();
+        result.kind = TOK_RARROW;
+        result.chars = "->";
+        return true;
+      }
+      result.kind = TOK_SUB;
+      result.chars = "-";
       return true;
     }
-    result.kind = TOK_SUB;
-    result.chars = "-";
-    return true;
-  } else if (next_char == '.') {
-    // ... for variable arguments.
-    getNextChar();  // 1 .
+    case '.': {
+      // ... for variable arguments.
+      getNextChar();  // 1 .
 
-    next_char = input_.peek();
-    if (next_char != '.') {
-      result.chars = ".";
-      result.kind = TOK_MEMBER_ACCESS;
-      return true;
-    }
-    getNextChar();  // 2 ..
+      next_char = input_.peek();
+      if (next_char != '.') {
+        result.chars = ".";
+        result.kind = TOK_MEMBER_ACCESS;
+        return true;
+      }
+      getNextChar();  // 2 ..
 
-    if (getNextChar() != '.') {  // 3 ...
-      result.loc.line = line_;
-      result.loc.col = col_;
-      getDiag().Err(result.loc)
-          << "Expected '...' to indicate variadic arguments.";
-      return false;
-    }
-    result.kind = TOK_VARARG;
-    result.chars = "...";
-    return true;
-  } else if (next_char == '<') {
-    getNextChar();
-    next_char = input_.peek();
-    if (next_char == '=') {
-      getNextChar();
-      result.kind = TOK_LE;
-      result.chars = "<=";
+      if (getNextChar() != '.') {  // 3 ...
+        result.loc.line = line_;
+        result.loc.col = col_;
+        getDiag().Err(result.loc)
+            << "Expected '...' to indicate variadic arguments.";
+        return false;
+      }
+      result.kind = TOK_VARARG;
+      result.chars = "...";
       return true;
     }
-    result.kind = TOK_LT;
-    result.chars = "<";
-    return true;
-  } else if (next_char == '=') {
-    getNextChar();
-    next_char = input_.peek();
-    if (next_char == '=') {
+    case '<': {
       getNextChar();
-      result.kind = TOK_EQ;
-      result.chars = "==";
+      next_char = input_.peek();
+      if (next_char == '=') {
+        getNextChar();
+        result.kind = TOK_LE;
+        result.chars = "<=";
+        return true;
+      }
+      result.kind = TOK_LT;
+      result.chars = "<";
       return true;
     }
-    result.kind = TOK_ASSIGN;
-    result.chars = "=";
-    return true;
+    case '=': {
+      getNextChar();
+      next_char = input_.peek();
+      if (next_char == '=') {
+        getNextChar();
+        result.kind = TOK_EQ;
+        result.chars = "==";
+        return true;
+      }
+      result.kind = TOK_ASSIGN;
+      result.chars = "=";
+      return true;
+    }
+    default:
+      break;
   }
 
   // Handle single char tokens.
@@ -202,6 +209,18 @@ bool Lexer::LexInt(Token &result) {
   }
 
   // Next char is not a digit.
+  if (next_char == 'i') {
+    getNextChar();
+    result.chars.push_back('i');
+
+    // Scan the number of bits.
+    next_char = input_.peek();
+    while (isdigit(next_char)) {
+      result.chars.push_back(static_cast<char>(getNextChar()));
+      next_char = input_.peek();
+    }
+  }
+
   result.kind = TOK_INT;
   return true;
 }

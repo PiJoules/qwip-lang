@@ -3,8 +3,14 @@ Comments */
 
 // Single line comments.
 
-// Globals
+// Global variables
+// Variables are also be defined in the syntax
+// <variable_name> : <type> = <init_value>;
 global_var: i32 = 10;
+
+// They can be declared also without an initial value. This will be an
+// uninitialized variable.
+global_uninitialized_var: i32;
 
 // Declaring global functions to be used.
 printf: (fmt: i8*, ...) -> void;
@@ -16,7 +22,24 @@ global_day: Days = WED;  // Evaluates to 3 as an integer.
 
 // Everything starts in main
 main: () -> i32 {
+  // Print using "printf" for formatted printing.
   printf("global_day is Wednesday? %d\n", global_day == WED);
+
+  ///////////////////////////////////////
+  // Types
+  ///////////////////////////////////////
+
+  // integers types are declared in the form "iX" where "X" can be any positive
+  // integer. This value represents the number of bits in the integer type.
+  int_var: i32 = 10;
+
+  // Integer literals can specify the number of bits they have by adding an
+  // "iX" after the number.
+  i31_var: i31 = 10i31;
+  boolean_var: i1 = 0i1;
+
+  // Boolean literals.
+  boolean_var = true;
 
   ret 0;
 }
