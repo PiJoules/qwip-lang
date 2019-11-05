@@ -538,6 +538,43 @@ bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
   return false;
 }
 
+bool Parser::ParsePtrTypeNode(std::unique_ptr<TypeNode> &type,
+                              std::unique_ptr<TypeNode> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  assert(tok.kind == TOK_PTR && "Expected the next token to be a '*'");
+  result = std::make_unique<PtrTypeNode>(type->getLoc(), type);
+  return true;
+}
+
+bool Parser::ParseArrayTypeNode(std::unique_ptr<TypeNode> &type,
+                                std::unique_ptr<TypeNode> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  assert(tok.kind == TOK_LBRACK && "Expected the next token to be a '['");
+
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_INT) {
+    diag_.Err(tok.loc) << "Expected the array size to be an integer literal.";
+    return false;
+  }
+
+  std::unique_ptr<Int> int_val = Int::fromToken(tok);
+  if (!int_val->getVal()) {
+    diag_.Err(tok.loc) << "Cannot declare an empty array type.";
+    return false;
+  }
+  result =
+      std::make_unique<ArrayTypeNode>(type->getLoc(), type, int_val->getVal());
+
+  TRY_LEX(lexer_, tok);
+  if (tok.kind != TOK_RBRACK) {
+    diag_.Err(tok.loc) << "Expected the array type to end with a ']'.";
+    return false;
+  }
+  return true;
+}
+
 bool Parser::ParseTypeNode(std::unique_ptr<TypeNode> &result) {
   Token lookahead;
   TRY_PEEK(lexer_, lookahead);
@@ -564,12 +601,23 @@ bool Parser::ParseTypeNode(std::unique_ptr<TypeNode> &result) {
   std::unique_ptr<Type> type_clone = canonical_type->Clone();
   result = std::make_unique<IDTypeNode>(tok.loc, tok.chars, type_clone);
 
-  // Check for pointers
-  TRY_PEEK(lexer_, lookahead);
-  while (lookahead.kind == TOK_PTR) {
-    result = std::make_unique<PtrTypeNode>(tok.loc, result);
-    TRY_LEX(lexer_, tok);
+  bool parse_type_modifiers = true;
+  while (parse_type_modifiers) {
     TRY_PEEK(lexer_, lookahead);
+
+    switch (lookahead.kind) {
+      case TOK_PTR:
+        // Check for pointers
+        if (!ParsePtrTypeNode(result, result)) return false;
+        break;
+      case TOK_LBRACK:
+        // Check for arrays
+        if (!ParseArrayTypeNode(result, result)) return false;
+        break;
+      default:
+        parse_type_modifiers = false;
+        break;
+    }
   }
 
   return true;
@@ -717,6 +765,22 @@ bool Parser::TryToParseCompoundExpr(std::unique_ptr<Expr> &expr) {
     } else if (tok.kind == TOK_LPAR) {
       if (!TryToMakeCallAfterExpr(expr)) return false;
       continue;
+    } else if (tok.kind == TOK_LBRACK) {
+      TRY_LEX(lexer_, tok);  // [
+      SourceLocation arrayloc = tok.loc;
+
+      std::unique_ptr<Expr> idx;
+      if (!ParseExpr(idx)) return false;
+
+      TRY_LEX(lexer_, tok);
+      if (tok.kind != TOK_RBRACK) {
+        diag_.Err(tok.loc)
+            << "Expected the closing ']' for an array subscript.";
+        return false;
+      }
+
+      expr = std::make_unique<Subscript>(expr, idx);
+      continue;
     }
     break;
   }
@@ -850,6 +914,8 @@ static T ParseInt(const std::string_view &str,
   return result;
 }
 
+// TODO: Make a new function that gets the value and number of bits instead of
+// always having to create a new Int.
 std::unique_ptr<Int> Int::fromToken(const Token &tok) {
   const std::string &str = tok.chars;
   assert(!str.empty());
@@ -867,6 +933,51 @@ std::unique_ptr<Int> Int::fromToken(const Token &tok) {
   }
 
   return std::make_unique<Int>(tok.loc, result, num_bits);
+}
+
+bool Parser::ParseArray(std::unique_ptr<Expr> &result) {
+  Token tok;
+  TRY_LEX(lexer_, tok);
+  assert(tok.kind == TOK_LBRACK &&
+         "Do not call ParseArray unless the next token is a left bracket.");
+  SourceLocation arrayloc = tok.loc;
+
+  // Parse arguments.
+  std::vector<std::unique_ptr<Expr>> elems;
+
+  Token lookahead;
+  TRY_PEEK(lexer_, lookahead);
+  if (lookahead.kind != TOK_RBRACK) {
+    // Arguments.
+    while (1) {
+      // Consume and read expressions.
+      std::unique_ptr<Expr> elem;
+      if (!ParseExpr(elem)) return false;
+      elems.push_back(std::move(elem));
+
+      TRY_PEEK(lexer_, lookahead);
+      if (lookahead.kind != TOK_RBRACK) {
+        TRY_LEX(lexer_, tok);
+        if (tok.kind != TOK_COMMA) {
+          diag_.Err(tok.loc) << "Expected a ',' to separate array elements "
+                                "or a closing ']' when parsing the "
+                                "elements of an array.";
+          return false;
+        }
+      } else {
+        break;
+      }
+    }
+  }
+
+  // ]
+  TRY_LEX(lexer_, tok);
+  assert(tok.kind == TOK_RBRACK &&
+         "We should have only broken out of the previous loop if we ran into a "
+         "closing bracket.");
+
+  result = std::make_unique<Array>(arrayloc, elems);
+  return true;
 }
 
 bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
@@ -899,6 +1010,9 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
       result = std::make_unique<Bool>(tok.loc, false);
       return true;
     }
+    case TOK_LBRACK: {
+      return ParseArray(result);
+    }
     default:
       diag_.Err(lookahead.loc) << "Expected an expression. Found "
                                << TokenKindAsString(lookahead.kind) << ".";
@@ -906,30 +1020,101 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
   }
 }
 
-bool PtrType::isEqual(const Type &other) const {
-  if (other.getKind() == TYPE_STR) {
-    if (getPointeeType().getKind() != TYPE_INT) return false;
-    return getPointeeType().getAs<IntType>().getNumBits() == kNumCharBits;
+// We check for is_str, since we won't be returning an underlying type in the
+// event it is a string type.
+static void GetPointerLikeAttributes(const Type &type, bool &has_size,
+                                     size_t &size, const Type *&underlying_type,
+                                     bool &is_str) {
+  if (const auto *ptr = type.maybeAs<PtrType>()) {
+    has_size = false;
+    is_str = false;
+    underlying_type = &ptr->getPointeeType();
+  } else if (const auto *str = type.maybeAs<StrType>()) {
+    has_size = true;
+    size = str->getSize();
+    is_str = true;
+  } else if (const auto *arr = type.maybeAs<ArrayType>()) {
+    has_size = true;
+    size = arr->getNumElems();
+    is_str = false;
+    underlying_type = &arr->getElementType();
+  } else {
+    UNREACHABLE("Unexpected pointer-like type");
   }
+}
 
-  if (getKind() != other.getKind()) return false;
-  return getPointeeType() == other.getAs<PtrType>().getPointeeType();
+static bool PointerLikeTypesAreEqual(const Type &type1, const Type &type2) {
+  bool type1_has_size, type2_has_size, is_str1, is_str2;
+  size_t size1, size2;
+  const Type *underlying_type1, *underlying_type2;
+  GetPointerLikeAttributes(type1, type1_has_size, size1, underlying_type1,
+                           is_str1);
+  GetPointerLikeAttributes(type2, type2_has_size, size2, underlying_type2,
+                           is_str2);
+
+  if (is_str1) {
+    // 1 is a string
+    if (is_str2) {
+      // 2 is a string
+      return size1 == size2;
+    } else if (type1_has_size) {
+      // 2 is an array
+      if (const auto *int_type = underlying_type2->maybeAs<IntType>()) {
+        return int_type->getNumBits() == kNumCharBits && size1 == size2;
+      }
+      return false;
+    } else {
+      // 2 is a ptr
+      if (const auto *pointee = underlying_type2->maybeAs<IntType>()) {
+        return pointee->getNumBits() == kNumCharBits;
+      }
+      return false;
+    }
+  } else if (type1_has_size) {
+    // 1 is an array
+    if (is_str2) {
+      // 2 is a string
+      if (const auto *int_type = underlying_type1->maybeAs<IntType>()) {
+        return int_type->getNumBits() == kNumCharBits && size1 == size2;
+      }
+      return false;
+    } else if (type1_has_size) {
+      // 2 is an array
+      return size1 == size2 && (*underlying_type1 == *underlying_type2);
+    } else {
+      // 2 is a ptr
+      return *underlying_type1 == *underlying_type2;
+    }
+  } else {
+    // 1 is a pointer
+    if (is_str2) {
+      // 2 is a string
+      if (const auto *int_type = underlying_type1->maybeAs<IntType>()) {
+        return int_type->getNumBits() == kNumCharBits;
+      }
+      return false;
+    } else {
+      // 2 is an array or pointer
+      return *underlying_type1 == *underlying_type2;
+    }
+  }
+}
+
+bool PtrType::isEqual(const Type &other) const {
+  return PointerLikeTypesAreEqual(*this, other);
 }
 
 bool StrType::isEqual(const Type &other) const {
-  if (other.getKind() == TYPE_PTR) {
-    const auto &other_ptr = other.getAs<PtrType>();
-    const Type &elem_type = other_ptr.getPointeeType();
-    if (elem_type.getKind() != TYPE_INT) return false;
+  return PointerLikeTypesAreEqual(*this, other);
+}
 
-    const auto &int_type = elem_type.getAs<IntType>();
-    return int_type.getNumBits() == kNumCharBits;
-  }
-
-  if (getKind() != other.getKind()) return false;
-  return size_ == other.getAs<StrType>().getSize();
+bool ArrayType::isEqual(const Type &other) const {
+  return PointerLikeTypesAreEqual(*this, other);
 }
 
 std::unordered_map<std::string, std::unique_ptr<Type>> Context::cached_types_;
+
+#define TYPE(EnumKind, Class) TypeKind Class::Kind = EnumKind;
+#include "Types.def"
 
 }  // namespace qwip

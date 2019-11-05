@@ -80,9 +80,11 @@ endfunction()
 # TODO: Update testing such that whenever we want to add a new test, we can
 # just add a new test file or update another testing file instead of having to
 # change the cmake file.
+add_qwip_test_example(0-quickstart "global_day is Wednesday? 1\n")
 add_qwip_test_example(1-empty-main "")
 add_qwip_test_example(2-hello-world "Hello World!\n")
 add_qwip_test_example(3-variable-declaration "Test\nTest\n")
 add_qwip_test_example(4-print-format "10\n11\n")
 add_qwip_test_example(5-fibonacci "0\n1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n")
 add_qwip_test_example(6-structures "7\n3\n")
+add_qwip_test_example(7-arrays "1\n2\n3\n4\n5\n")

@@ -4,6 +4,7 @@
 
 TYPE(TYPE_FUNC, FuncType)
 TYPE(TYPE_PTR, PtrType)
+TYPE(TYPE_ARRAY, ArrayType)
 TYPE(TYPE_STR, StrType)
 TYPE(TYPE_INT, IntType)
 TYPE(TYPE_STRUCT, StructType)

@@ -135,7 +135,8 @@ bool Lexer::Lex(Token &result) {
   // Proceed to handle keywords.
   if (isalpha(next_char) || next_char == '_') return LexKeywordOrID(result);
 
-  getDiag().Err(result.loc) << "Unable to lex character '" << next_char << "'.";
+  getDiag().Err(result.loc)
+      << "Unable to lex character '" << static_cast<char>(next_char) << "'.";
   return false;
 }
 
