@@ -21,6 +21,9 @@ class Compiler {
     assert_ptr(llvm_module_);
     return *llvm_module_;
   }
+  const llvm::DataLayout &getLLVMDataLayout() const {
+    return getLLVMModule().getDataLayout();
+  }
   bool SaveToExecutable(const std::string &input_filename,
                         const std::string &output_file);
 
@@ -51,8 +54,15 @@ class Compiler {
   llvm::Value *getAddrOfVariable(const std::string &name, llvm::Function *func);
   llvm::Value *getAddrOfMemberAccess(const MemberAccess &expr,
                                      llvm::IRBuilder<> &builder);
+  llvm::Value *getAddrOfSubscript(const Subscript &expr,
+                                  llvm::IRBuilder<> &builder);
   bool CompileVarDecl(const VarDecl &decl, llvm::IRBuilder<> &builder,
                       llvm::Value *&alloca);
+
+  llvm::Constant *getZero(llvm::Type *ty) {
+    return llvm::Constant::getNullValue(ty);
+  }
+  llvm::Type *getInt32Ty() { return llvm::Type::getInt32Ty(llvm_context_); }
 
   const Diagnostic diag_;
   llvm::LLVMContext llvm_context_;

@@ -10,6 +10,10 @@
 #include "Diagnostics.h"
 #include "Lexer.h"
 
+#define DECLARE_TYPEKIND_MEMBERS \
+  static TypeKind Kind;          \
+  TypeKind getKind() const override { return Kind; }
+
 namespace qwip {
 
 enum NodeKind {
@@ -50,11 +54,14 @@ class Type {
     return out.str();
   }
 
-  // TODO: Add each of the node kinds as a static member of the class so we can
-  // also assert here the type we are converting to is the same type as this.
   template <typename T>
   const T &getAs() const {
     return static_cast<const T &>(*this);
+  }
+  template <typename T>
+  const T *maybeAs() const {
+    if (getKind() != T::Kind) return nullptr;
+    return static_cast<const T *>(this);
   }
 
   virtual bool isEqual(const Type &other) const = 0;
@@ -64,6 +71,8 @@ class Type {
 
 class FuncType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   FuncType(std::unique_ptr<Type> &ret_type,
            std::vector<std::unique_ptr<Type>> &arg_types, bool isvararg)
       : ret_type_(std::move(ret_type)),
@@ -88,7 +97,6 @@ class FuncType : public Type {
     ret_type_->Dump(out);
   }
 
-  TypeKind getKind() const override { return TYPE_FUNC; }
   const Type &getReturnType() const { return *ret_type_; }
   const std::vector<std::unique_ptr<Type>> &getArgTypes() const {
     return arg_types_;
@@ -128,12 +136,13 @@ class FuncType : public Type {
 // TODO: Add the name of the struct as a part of the constructor.
 class StructType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   StructType() {}
   StructType(std::vector<std::unique_ptr<Type>> &types,
              const std::unordered_map<std::string, size_t> &idxs)
       : types_(std::move(types)), idxs_(idxs) {}
 
-  TypeKind getKind() const override { return TYPE_STRUCT; }
   std::unique_ptr<Type> Clone() const override {
     std::vector<std::unique_ptr<Type>> types;
     for (const auto &type_ptr : types_) {
@@ -188,8 +197,9 @@ class StructType : public Type {
 
 class StrType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   StrType(unsigned size) : size_(size) {}
-  TypeKind getKind() const override { return TYPE_STR; }
   unsigned getSize() const { return size_; }
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new StrType(size_));
@@ -205,8 +215,9 @@ class StrType : public Type {
 
 class IntType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   IntType(unsigned numbits) : numbits_(numbits) {}
-  TypeKind getKind() const override { return TYPE_INT; }
   unsigned getNumBits() const { return numbits_; }
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new IntType(numbits_));
@@ -225,7 +236,8 @@ class IntType : public Type {
 
 class VoidType : public Type {
  public:
-  TypeKind getKind() const override { return TYPE_VOID; }
+  DECLARE_TYPEKIND_MEMBERS;
+
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new VoidType);
   }
@@ -240,6 +252,8 @@ class VoidType : public Type {
 // TODO: Add the name of the enum as a parameter.
 class EnumType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   EnumType(const std::vector<std::string> &values,
            unsigned num_bits = kDefaultEnumNumBits)
       : values_(values), num_bits_(num_bits) {}
@@ -257,7 +271,6 @@ class EnumType : public Type {
     out << "}";
   }
 
-  TypeKind getKind() const override { return TYPE_ENUM; }
   std::unique_ptr<Type> Clone() const override {
     return std::unique_ptr<Type>(new EnumType(values_, num_bits_));
   }
@@ -294,6 +307,8 @@ class EnumType : public Type {
 
 class PtrType : public Type {
  public:
+  DECLARE_TYPEKIND_MEMBERS;
+
   PtrType(std::unique_ptr<Type> &pointee) : pointee_(std::move(pointee)) {
     assert_ptr(pointee_);
   }
@@ -303,7 +318,6 @@ class PtrType : public Type {
     out << "*";
   }
 
-  TypeKind getKind() const override { return TYPE_PTR; }
   const Type &getPointeeType() const { return *pointee_; }
   std::unique_ptr<Type> Clone() const override {
     auto pointee = pointee_->Clone();
@@ -314,6 +328,34 @@ class PtrType : public Type {
 
  private:
   std::unique_ptr<Type> pointee_;
+};
+
+class ArrayType : public Type {
+ public:
+  DECLARE_TYPEKIND_MEMBERS;
+
+  ArrayType(std::unique_ptr<Type> &elem, size_t size)
+      : elem_(std::move(elem)), size_(size) {
+    assert_ptr(elem_);
+  }
+
+  void Dump(std::ostream &out) const override {
+    elem_->Dump(out);
+    out << "[" << size_ << "]";
+  }
+
+  const Type &getElementType() const { return *elem_; }
+  std::unique_ptr<Type> Clone() const override {
+    auto elem = elem_->Clone();
+    return std::unique_ptr<Type>(new ArrayType(elem, size_));
+  }
+  size_t getNumElems() const { return size_; }
+
+  bool isEqual(const Type &other) const override;
+
+ private:
+  std::unique_ptr<Type> elem_;
+  size_t size_;
 };
 
 class Node {
@@ -471,6 +513,32 @@ class EnumLiteral : public Expr {
   std::unique_ptr<Type> type_;
 };
 
+class Array : public Expr {
+ public:
+  Array(const SourceLocation loc, std::vector<std::unique_ptr<Expr>> &vals)
+      : Expr(loc), vals_(std::move(vals)) {
+    assert(!vals_.empty() && "Cannot create an empty array.");
+    assert_ptr_vector(vals_);
+    std::unique_ptr<Type> first_type = vals_.front()->getType();
+    for (unsigned i = 1; i < vals_.size(); ++i) {
+      std::unique_ptr<Type> other_type = vals_[i]->getType();
+      assert(*first_type == *other_type &&
+             "Expected the type of each element in the array to be the same.");
+    }
+  }
+
+  NodeKind getKind() const override { return NODE_ARRAY; }
+  std::unique_ptr<Type> getType() const override {
+    std::unique_ptr<Type> elem_type = vals_.front()->getType();
+    std::unique_ptr<Type> type(new ArrayType(elem_type, vals_.size()));
+    return type;
+  }
+  const std::vector<std::unique_ptr<Expr>> &getVals() const { return vals_; }
+
+ private:
+  std::vector<std::unique_ptr<Expr>> vals_;
+};
+
 class ID : public Expr {
  public:
   ID(const SourceLocation loc, const std::string &name,
@@ -559,6 +627,30 @@ class MemberAccess : public Expr {
   std::string member_;
 };
 
+class Subscript : public Expr {
+ public:
+  Subscript(std::unique_ptr<Expr> &base, std::unique_ptr<Expr> &idx)
+      : Expr(base->getLoc()), base_(std::move(base)), idx_(std::move(idx)) {
+    assert_ptr(base_);
+    assert_ptr(idx_);
+    std::unique_ptr<Type> base_type = base_->getType();
+    assert(base_type->getKind() == TYPE_ARRAY &&
+           "THe base should be an array type.");
+  }
+
+  NodeKind getKind() const override { return NODE_SUBSCRIPT; }
+  const Expr &getBase() const { return *base_; }
+  const Expr &getIndex() const { return *idx_; }
+  std::unique_ptr<Type> getType() const override {
+    std::unique_ptr<Type> base_type = base_->getType();
+    return base_type->getAs<ArrayType>().getElementType().Clone();
+  }
+
+ private:
+  std::unique_ptr<Expr> base_;
+  std::unique_ptr<Expr> idx_;
+};
+
 /**
  * This node represents the usage of a type in code, not to be confused with
  * semantic Types.
@@ -586,6 +678,27 @@ class PtrTypeNode : public TypeNode {
 
  private:
   std::unique_ptr<TypeNode> pointee_type_;
+};
+
+class ArrayTypeNode : public TypeNode {
+ public:
+  ArrayTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &type,
+                unsigned size)
+      : TypeNode(loc), element_type_(std::move(type)), size_(size) {
+    assert_ptr(element_type_);
+  }
+  NodeKind getKind() const override { return NODE_ARRAY_TYPE; }
+
+  const TypeNode &getElementType() const { return *element_type_; }
+  std::unique_ptr<Type> toType() const override {
+    auto elem_type = element_type_->toType();
+    std::unique_ptr<Type> arr_type(new ArrayType(elem_type, size_));
+    return arr_type;
+  }
+
+ private:
+  std::unique_ptr<TypeNode> element_type_;
+  unsigned size_;
 };
 
 class IDTypeNode : public TypeNode {
@@ -1020,16 +1133,7 @@ class Context {
 
   const Type *getImmediateVarType(const std::string &varname) const {
     auto foundtype = vars_.find(varname);
-    if (foundtype != vars_.end()) {
-      const Type *type = foundtype->second.get();
-      // if (type->getKind() == TYPE_ID) {
-      //  //if (const Type *canon_type =
-      //  getType(type->getAs<IDType>().getName())) if (const Type *canon_type =
-      //  type->getAs<IDTypeNode>().getName())
-      //    return canon_type;
-      //}
-      return type;
-    }
+    if (foundtype != vars_.end()) return foundtype->second.get();
     return nullptr;
   }
 
@@ -1074,6 +1178,12 @@ class Parser {
   // but run into an error parsing it, we return false. Otherwise, return true.
   bool TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr);
   bool TryToParseCompoundExpr(std::unique_ptr<Expr> &expr);
+
+  bool ParsePtrTypeNode(std::unique_ptr<TypeNode> &type,
+                        std::unique_ptr<TypeNode> &result);
+  bool ParseArrayTypeNode(std::unique_ptr<TypeNode> &type,
+                          std::unique_ptr<TypeNode> &result);
+  bool ParseArray(std::unique_ptr<Expr> &result);
 
   Context &getContext() {
     assert(current_context_ &&

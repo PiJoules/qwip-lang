@@ -106,6 +106,11 @@ llvm::Type *Compiler::PtrTypeToLLVMType(const PtrType &type) {
   return llvm::PointerType::getUnqual(toLLVMType(type.getPointeeType()));
 }
 
+llvm::Type *Compiler::ArrayTypeToLLVMType(const ArrayType &type) {
+  return llvm::ArrayType::get(toLLVMType(type.getElementType()),
+                              type.getNumElems());
+}
+
 bool Compiler::CompileVarDecl(const VarDecl &decl, llvm::IRBuilder<> &builder,
                               llvm::Value *&result) {
   std::unique_ptr<Type> type = decl.getType();
@@ -304,6 +309,33 @@ bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
   return true;
 }
 
+bool Compiler::CompileArray(const Array &expr, llvm::IRBuilder<> &builder,
+                            llvm::Value *&result) {
+  // TODO: Update this to emit better IR that doesn't involve creating a
+  // temporary.
+  // 1. Allocate space for an anonymous array.
+  std::unique_ptr<Type> arr_type = expr.getType();
+  llvm::Type *llvm_arr_type = toLLVMType(*arr_type);
+  llvm::Value *anon_array_ptr = builder.CreateAlloca(llvm_arr_type);
+  auto *i32ty = llvm::Type::getInt32Ty(llvm_context_);
+  auto *zero = llvm::Constant::getNullValue(i32ty);
+
+  // 2. Store each element in the array individually.
+  const auto &contents = expr.getVals();
+  for (unsigned i = 0; i < contents.size(); ++i) {
+    auto *idx = llvm::ConstantInt::get(i32ty, i);
+    llvm::Value *addr = builder.CreateInBoundsGEP(anon_array_ptr, {zero, idx});
+
+    llvm::Value *elem;
+    if (!CompileExpr(*(contents[i]), builder, elem)) return false;
+
+    builder.CreateStore(elem, addr, /*isVolatile=*/false);
+  }
+
+  result = anon_array_ptr;
+  return true;
+}
+
 bool Compiler::CompileBool(const Bool &expr, llvm::IRBuilder<> &builder,
                            llvm::Value *&result) {
   result = llvm::ConstantInt::get(llvm_context_,
@@ -335,7 +367,8 @@ bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
   }
 
   const auto *ptr_type = llvm::cast<llvm::PointerType>(var_addr->getType());
-  if (ptr_type->getElementType()->isFunctionTy()) {
+  if (ptr_type->getElementType()->isFunctionTy() ||
+      ptr_type->getElementType()->isArrayTy()) {
     result = var_addr;
   } else {
     result = builder.CreateLoad(var_addr);
@@ -376,10 +409,26 @@ llvm::Value *Compiler::getAddrOfMemberAccess(const MemberAccess &expr,
   return builder.CreateInBoundsGEP(base_val, {zero, idx});
 }
 
+llvm::Value *Compiler::getAddrOfSubscript(const Subscript &subscript,
+                                          llvm::IRBuilder<> &builder) {
+  llvm::Value *base_val, *idx;
+  if (!CompileExpr(subscript.getBase(), builder, base_val)) return nullptr;
+  if (!CompileExpr(subscript.getIndex(), builder, idx)) return nullptr;
+  return builder.CreateInBoundsGEP(base_val, {getZero(getInt32Ty()), idx});
+}
+
 bool Compiler::CompileMemberAccess(const MemberAccess &expr,
                                    llvm::IRBuilder<> &builder,
                                    llvm::Value *&result) {
   if (!(result = getAddrOfMemberAccess(expr, builder))) return false;
+  result = builder.CreateLoad(result);
+  return true;
+}
+
+bool Compiler::CompileSubscript(const Subscript &expr,
+                                llvm::IRBuilder<> &builder,
+                                llvm::Value *&result) {
+  if (!(result = getAddrOfSubscript(expr, builder))) return false;
   result = builder.CreateLoad(result);
   return true;
 }
@@ -538,6 +587,11 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
       if (!(value_addr = getAddrOfMemberAccess(member, builder))) return false;
       break;
     }
+    case NODE_SUBSCRIPT: {
+      const auto &member = stmt.getLHS().getAs<Subscript>();
+      if (!(value_addr = getAddrOfSubscript(member, builder))) return false;
+      break;
+    }
 #define ASSIGNABLE(Kind, Class)
 #define NODE(Kind, Class) case Kind:
 #include "Nodes.def"
@@ -558,7 +612,25 @@ bool Compiler::CompileVarDef(const VarDef &stmt, llvm::IRBuilder<> &builder) {
   if (!CompileVarDecl(stmt.getDecl(), builder, value_addr)) return false;
   llvm::Value *init;
   if (!CompileExpr(stmt.getInit(), builder, init)) return false;
-  builder.CreateStore(init, value_addr, /*isVolatile=*/false);
+
+  std::unique_ptr<Type> init_type = stmt.getInit().getType();
+  if (init_type->getKind() == TYPE_ARRAY) {
+    auto *init_ptr_type = llvm::cast<llvm::PointerType>(init->getType());
+    auto *init_arr_type =
+        llvm::cast<llvm::ArrayType>(init_ptr_type->getElementType());
+    uint64_t size = init_arr_type->getNumElements() *
+                    init_arr_type->getElementType()->getScalarSizeInBits() / 8;
+
+    uint64_t dst_alignment =
+        value_addr->getPointerAlignment(getLLVMDataLayout());
+    assert(dst_alignment != 1 && "Could not get the dst alignment");
+    uint64_t src_alignment = init->getPointerAlignment(getLLVMDataLayout());
+    assert(src_alignment != 1 && "Could not get the src alignment");
+    builder.CreateMemMove(value_addr, static_cast<unsigned>(dst_alignment),
+                          init, static_cast<unsigned>(src_alignment), size);
+  } else {
+    builder.CreateStore(init, value_addr, /*isVolatile=*/false);
+  }
   return true;
 }
 
