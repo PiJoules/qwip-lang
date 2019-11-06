@@ -8,9 +8,6 @@ os:
 python: 2.7
 bash: 4
 cmake: 3.4.3
-addons:
-  apt:
-    packages: lcov-1.14
 before_install:
 - sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
 - g++-8 --version
@@ -52,8 +49,18 @@ script:
 after_success:
 # Create lcov report
 - cd .. && cd build-coverage
-- lcov --capture --directory . --output-file coverage.info
-- lcov -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
-- lcov --list coverage.info # debug info
+
+# Based off some other issues I found
+# (https://github.com/linux-test-project/lcov/issues/38), gcc 8 does not seem
+# to work well with whatever version of lcov comes with travis by default. We
+# will instead opt for getting a prebuilt that works and using that.
+- wget http://downloads.sourceforge.net/ltp/lcov-1.14.tar.gz
+- tar xvfz lcov-1.14.tar.gz
+- make -C lcov-1.14
+
+- lcov-1.14/bin/lcov --capture --directory . --output-file coverage.info
+- lcov-1.14/bin/lcov -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
+- lcov-1.14/bin/lcov --list coverage.info # debug info
+
 # Uploading report to CodeCov
 - bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"
