@@ -15,7 +15,7 @@ before_install:
 - cmake --version
 - ninja --version
 - python --version
-- gcov --version
+- gcov-8 --version
 script:
 # Regular tests
 - mkdir build && cd build
@@ -58,14 +58,14 @@ after_success:
 #- wget http://downloads.sourceforge.net/ltp/lcov-1.11.tar.gz
 #- tar xvfz lcov-1.11.tar.gz
 #- make -C lcov-1.11
-- git clone https://github.com/linux-test-project/lcov.git
-- cd lcov
-- DESTDIR=out make install
-- cd ..
+#- git clone https://github.com/linux-test-project/lcov.git
+#- cd lcov
+#- DESTDIR=out make install
+#- cd ..
 
-- lcov/out/usr/local/bin/lcov --capture --directory . --output-file coverage.info
-- lcov/out/usr/local/bin/lcov -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
-- lcov/out/usr/local/bin/lcov --list coverage.info # debug info
+- lcov --gcov-tool gcov-8 --capture --directory . --output-file coverage.info
+- lcov --gcov-tool gcov-8 -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
+- lcov --gcov-tool gcov-8 --list coverage.info # debug info
 
 # Uploading report to CodeCov
 - bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"
