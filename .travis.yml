@@ -8,6 +8,9 @@ os:
 python: 2.7
 bash: 4
 cmake: 3.4.3
+addons:
+  apt:
+    packages: lcov
 before_install:
 - sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
 - g++-8 --version
@@ -39,3 +42,18 @@ script:
 - cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ..
 - ninja
 - ninja test
+
+# Code Coverage
+- cd .. && mkdir build-coverage && cd build-coverage
+- cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DCODE_COVERAGE=ON ..
+- ninja
+- ninja test
+
+after_sucess:
+# Create lcov report
+- cd .. && cd build-coverage
+- lcov --capture --directory . --output-file coverage.info
+- lcov -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
+- lcov --list coverage.info # debug info
+# Uploading report to CodeCov
+- bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"

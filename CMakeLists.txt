@@ -9,6 +9,10 @@ option(
   TEST_WITH_VALGRIND
   "Run tests against valgrind for memory checking. Defaults to OFF."
   OFF)
+option(
+  CODE_COVERAGE
+  "Enable code coverage reporting."
+  OFF)
 
 string(TOUPPER ${SANITIZER} SANITIZER)
 
@@ -43,20 +47,31 @@ target_compile_options(qwip
   PRIVATE -Wno-unused-parameter  # For warnings from LLVM headers
   PRIVATE -UNDEBUG  # We will always keep assertions on!
 )
+
+if (CODE_COVERAGE)
+  message(STATUS "Building with code coverage")
+  target_compile_options(qwip
+    PRIVATE -fprofile-arcs
+    PRIVATE -ftest-coverage
+    PRIVATE -g
+  )
+  set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fprofile-arcs -ftest-coverage")
+endif()
+
 llvm_config(qwip USE_SHARED)  # Link against the standalone libLLVM shared library
 
 if (${SANITIZER} STREQUAL "ADDRESS")
   message(STATUS "Building with ASan")
   target_compile_options(qwip PRIVATE "-fsanitize=address,pointer-compare,pointer-subtract")
-  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=address,pointer-compare,pointer-subtract")
+  set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=address,pointer-compare,pointer-subtract")
 elseif(${SANITIZER} STREQUAL "THREAD")
   message(STATUS "Building with TSan")
   target_compile_options(qwip PRIVATE "-fsanitize=thread")
-  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=thread")
+  set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=thread")
 elseif(${SANITIZER} STREQUAL "UNDEFINED")
   message(STATUS "Building with UBSan")
   target_compile_options(qwip PRIVATE "-fsanitize=undefined")
-  set_target_properties(qwip PROPERTIES LINK_FLAGS "-fsanitize=undefined")
+  set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=undefined")
 endif()
 
 # Testing
