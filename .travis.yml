@@ -10,7 +10,7 @@ bash: 4
 cmake: 3.4.3
 addons:
   apt:
-    packages: lcov
+    packages: lcov-1.14
 before_install:
 - sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
 - g++-8 --version
