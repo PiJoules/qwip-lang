@@ -49,7 +49,7 @@ script:
 - ninja
 - ninja test
 
-after_sucess:
+after_success:
 # Create lcov report
 - cd .. && cd build-coverage
 - lcov --capture --directory . --output-file coverage.info
