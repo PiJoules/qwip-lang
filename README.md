@@ -1,8 +1,9 @@
 # qwip
 
-master branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang)
-
-dev branch status: [![Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang)
+| master | dev |
+|--------|-----|
+| [![Master Branch Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=master)](https://travis-ci.org/PiJoules/qwip-lang) | [![Dev Branch Build Status](https://travis-ci.org/PiJoules/qwip-lang.svg?branch=dev)](https://travis-ci.org/PiJoules/qwip-lang) |
+| [![codecov](https://codecov.io/gh/PiJoules/qwip-lang/branch/master/graph/badge.svg)](https://codecov.io/gh/PiJoules/qwip-lang) | [![codecov](https://codecov.io/gh/PiJoules/qwip-lang/branch/dev/graph/badge.svg)](https://codecov.io/gh/PiJoules/qwip-lang) |
 
 ```
 printf: (fmt: i8*, ...) -> void;
