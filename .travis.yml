@@ -19,6 +19,7 @@ before_install:
 - ninja --version
 - python --version
 - gcov-8 --version
+- lcov --version
 script:
 # Regular tests
 - mkdir build && cd build
