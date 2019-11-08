@@ -61,11 +61,6 @@ after_success:
 # will instead opt for getting a prebuilt that works and using that.
 - wget http://downloads.sourceforge.net/ltp/lcov-1.14.tar.gz
 - tar xvfz lcov-1.14.tar.gz
-#- make -C lcov-1.11
-#- git clone https://github.com/linux-test-project/lcov.git
-#- cd lcov
-#- DESTDIR=out make install
-#- cd ..
 
 - lcov-1.14/bin/lcov --gcov-tool gcov-8 --capture --directory . --output-file coverage.info
 - lcov-1.14/bin/lcov --gcov-tool gcov-8 -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
