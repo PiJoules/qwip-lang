@@ -29,6 +29,7 @@ add_definitions(${LLVM_DEFINITIONS})
 message(STATUS "LLVM C++ Compilation Flags: ${LLVM_DEFINITIONS}")
 
 set(SRCS
+  src/CommandLineParser.cpp
   src/Compiler.cpp
   src/Lexer.cpp
   src/Parser.cpp

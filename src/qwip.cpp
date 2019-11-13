@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 
+#include "CommandLineParser.h"
 #include "Compiler.h"
 #include "Lexer.h"
 #include "Parser.h"
@@ -18,49 +19,6 @@ using namespace qwip;
 
 namespace {
 
-struct CommandLineArgs {
-  std::string input_file;
-  std::string output_file = "a.out";
-
-  bool dump_tokens = false;
-  bool dump_llvm = false;
-};
-
-bool ParseCommandLine(int argc, char **argv, CommandLineArgs &cmd_args) {
-  bool found_input_file = false;
-  for (int i = 1; i < argc; ++i) {
-    std::string arg(argv[i]);
-    if (arg == "--dump-tokens") {
-      cmd_args.dump_tokens = true;
-    } else if (arg == "--dump-llvm") {
-      cmd_args.dump_llvm = true;
-    } else if (arg == "-o") {
-      ++i;
-      if (i >= argc) {
-        std::cerr << "No argument provided for -o\n";
-        return false;
-      }
-      arg = argv[i];
-      cmd_args.output_file = arg;
-    } else if (!found_input_file) {
-      cmd_args.input_file = arg;
-      found_input_file = true;
-    } else {
-      std::cerr << "Already found " << cmd_args.input_file
-                << " as an input, but also found " << arg
-                << " as an input. Only one input can be passed at a time.\n";
-      return false;
-    }
-  }
-
-  if (!found_input_file) {
-    std::cerr << "Missing input file\n";
-    return false;
-  }
-
-  return true;
-}
-
 bool DumpTokens(Lexer &lexer) {
   Token tok;
   do {
@@ -72,11 +30,12 @@ bool DumpTokens(Lexer &lexer) {
   } while (tok.kind != TOK_EOF);
   return true;
 }
+
 }  // namespace
 
 int main(int argc, char **argv) {
-  CommandLineArgs cmd_args;
-  if (!ParseCommandLine(argc, argv, cmd_args)) return 1;
+  ParsedCmdLineArgs cmd_args;
+  if (!ParseCommandLineArgs(cmd_args, argc, argv)) return 1;
 
   Diagnostic diag;
   Lexer lexer(cmd_args.input_file, diag);
