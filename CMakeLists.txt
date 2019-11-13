@@ -90,7 +90,7 @@ function(add_qwip_test_example test_name expected_output)
       "${CMAKE_SOURCE_DIR}/examples/${test_name}.qw" "-o" "${test_name}.qw.out")
   endif()
 
-  add_test("run-example-${test_name}" "python" "${CMAKE_SOURCE_DIR}/compare_outputs.py" "${CMAKE_BINARY_DIR}/${test_name}.qw.out" "${expected_output}")
+  add_test("run-example-${test_name}" "python" "${CMAKE_SOURCE_DIR}/compare-outputs.py" "${CMAKE_BINARY_DIR}/${test_name}.qw.out" "${expected_output}")
 endfunction()
 
 # TODO: Update testing such that whenever we want to add a new test, we can
