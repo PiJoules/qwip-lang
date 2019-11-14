@@ -79,6 +79,10 @@ endif()
 ENABLE_TESTING()
 include(CTest)
 
+if (${TEST_WITH_VALGRIND})
+  message(STATUS "Testing with valrgind")
+endif()
+
 function(add_qwip_test_example test_name expected_output)
   if (${TEST_WITH_VALGRIND})
     add_test("build-example-${test_name}"

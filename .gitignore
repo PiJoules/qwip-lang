@@ -3,3 +3,4 @@ qwip-asan
 *.dSYM/
 *.pyc
 out/
+*.swp

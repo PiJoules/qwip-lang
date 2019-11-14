@@ -21,8 +21,8 @@ namespace {
 
 bool FindExe(const std::string &exe_name, std::string &linker_path) {
   auto result = llvm::sys::findProgramByName(exe_name);
-  linker_path = result.get();
-  return !result.getError();
+  if (result) linker_path = result.get();
+  return bool(result);
 }
 
 }  // namespace
@@ -693,8 +693,9 @@ bool Compiler::SaveToExecutable(const std::string &input_filepath,
   dest.close();
 
   std::string cc_binary;
-  if (!FindExe("clang++", cc_binary)) {
-    std::cerr << "Couldn't find a c++ compiler.\n";
+  if (!FindExe("clang++", cc_binary) && !FindExe("g++", cc_binary)) {
+    std::cerr
+        << "Couldn't find a c++ compiler. Checked for 'clang++' and 'g++'.\n";
     return false;
   }
 

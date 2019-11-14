@@ -35,9 +35,8 @@ valgrind      # (Optional) For testing
 
 ```sh
 # Only needs to be done once
-$ sudo apt-get -y g++-8
-$ sudo apt-get install -y libllvm-8-ocaml-dev libllvm8 llvm-8 llvm-8-dev llvm-8-doc llvm-8-examples llvm-8-runtime lld-8
-$ sudo apt-get install -y valgrind  # Optional
+$ sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
+$ sudo apt-get install -y valgrind clang-format # Optional
 $ git clone https://github.com/PiJoules/qwip-lang.git
 $ mkdir qwip-build
 $ cd qwip-build
@@ -58,14 +57,6 @@ You can run tests with
 $ ninja test
 ```
 
-Alternatively, you can change the tests to run against valgrind.
-
-```sh
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH_VALGRIND=ON ../qwip-lang
-$ ninja qwip
-$ ninja test
-```
-
 ### Sanitizers
 
 You can build qwip with either Address, Thread, or UndefinedBehavior sanitizers:
@@ -75,6 +66,56 @@ $ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=
 $ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=THREAD ../qwip-lang
 $ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ../qwip-lang
 ```
+
+### Valgrind
+
+You can change the tests to run against valgrind.
+
+```sh
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DTEST_WITH_VALGRIND=ON ../qwip-lang
+$ ninja qwip
+$ ninja test
+```
+
+**Note**: I have only successfully passed all tests with valgrind on an x86_64 linux machine. I've run into issues where the running valgrind on Arm64 or MacOS machines fail due to either
+- Unrecognized instructions
+- Issues/errors caught in the llvm prebuilt library for that particular host machine
+
+For the first case, you can try building valgrind from scratch by following the instructions at http://valgrind.org/downloads/repository.html:
+
+```sh
+# From the build directory
+$ git clone git://sourceware.org/git/valgrind.git
+$ cd valgrind
+$ ./autogen.sh
+$ ./configure --prefix=...
+$ make
+$ ./vg-in-place --leak-check=full --error-exitcode=1 ../qwip ../../qwip-lang/examples/1-empty-main.qw
+```
+
+For the second case, I'd instead opt for building with `Address Sanitizer` which should avoid checking llvm library code.
+
+## Debugging
+
+Note: Backtraces are not yet implemented for the compiler. In the event you hit an internal compiler error (such as a segfault or assertion error), you can instead use `gdb` to find a backtrace and debug:
+
+```sh
+$ gdb --args ./qwip ../qwip-lang/examples/1-empty-main.qw
+```
+
+## Contributing
+
+This project contains 2 main branches: `master` and `dev`. The master branch holds the latest stable version of qwip.
+
+The dev branch holds the latest unstable version for development. All contributions should be made to the `dev` branch.
+
+Periodically, the changes that lead up to the latest green build of `dev` are rolled into master. The status of each branch can be checked at https://travis-ci.org/PiJoules/qwip-lang.
+
+### Formatting
+
+Before submitting a change, be sure to run `python format.py` from the project source directory to format the source code.
+
+By defualt, the formatter uses `clang-format`, but this can be changed with a flag (`python format.py --formatter FORMATTER`).
 
 ## Misc Notes
 
