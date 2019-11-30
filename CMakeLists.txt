@@ -29,51 +29,58 @@ add_definitions(${LLVM_DEFINITIONS})
 message(STATUS "LLVM C++ Compilation Flags: ${LLVM_DEFINITIONS}")
 
 set(SRCS
-  src/CommandLineParser.cpp
   src/Compiler.cpp
   src/Lexer.cpp
-  src/Parser.cpp
-  src/qwip.cpp)
+  src/Parser.cpp)
+
+add_library(qwip-lib ${SRCS})
+target_compile_options(qwip-lib
+  PUBLIC -Werror
+  PUBLIC -Wall
+  PUBLIC -Wextra
+  PUBLIC -Wconversion
+  PUBLIC -fno-exceptions
+  PUBLIC -fno-rtti
+  PUBLIC -std=c++17
+  PUBLIC -Wno-unused-parameter  # For warnings from LLVM headers
+  PUBLIC -UNDEBUG  # We will always keep assertions on!
+)
 
 # Now build our tools.
-add_executable(qwip ${SRCS})
-target_compile_options(qwip
-  PRIVATE -Werror
-  PRIVATE -Wall
-  PRIVATE -Wextra
-  PRIVATE -Wconversion
-  PRIVATE -fno-exceptions
-  PRIVATE -fno-rtti
-  PRIVATE -std=c++17
-  PRIVATE -Wno-unused-parameter  # For warnings from LLVM headers
-  PRIVATE -UNDEBUG  # We will always keep assertions on!
-)
+add_executable(qwip src/qwip.cpp)
+target_link_libraries(qwip PUBLIC qwip-lib)
 
 if (CODE_COVERAGE)
   message(STATUS "Building with code coverage")
-  target_compile_options(qwip
-    PRIVATE -fprofile-arcs
-    PRIVATE -ftest-coverage
-    PRIVATE -g
+  target_compile_options(qwip-lib
+    PUBLIC -fprofile-arcs
+    PUBLIC -ftest-coverage
+    PUBLIC -g
   )
+  set_property(TARGET qwip-lib APPEND_STRING PROPERTY LINK_FLAGS " -fprofile-arcs -ftest-coverage")
   set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fprofile-arcs -ftest-coverage")
 endif()
 
-llvm_config(qwip USE_SHARED)  # Link against the standalone libLLVM shared library
-
 if (${SANITIZER} STREQUAL "ADDRESS")
   message(STATUS "Building with ASan")
-  target_compile_options(qwip PRIVATE "-fsanitize=address,pointer-compare,pointer-subtract")
+  target_compile_options(qwip-lib PUBLIC "-fsanitize=address,pointer-compare,pointer-subtract")
+  set_property(TARGET qwip-lib APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=address,pointer-compare,pointer-subtract")
   set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=address,pointer-compare,pointer-subtract")
 elseif(${SANITIZER} STREQUAL "THREAD")
   message(STATUS "Building with TSan")
-  target_compile_options(qwip PRIVATE "-fsanitize=thread")
+  target_compile_options(qwip-lib PUBLIC "-fsanitize=thread")
+  set_property(TARGET qwip-lib APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=thread")
   set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=thread")
 elseif(${SANITIZER} STREQUAL "UNDEFINED")
   message(STATUS "Building with UBSan")
-  target_compile_options(qwip PRIVATE "-fsanitize=undefined")
+  target_compile_options(qwip-lib PUBLIC "-fsanitize=undefined")
+  set_property(TARGET qwip-lib APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=undefined")
   set_property(TARGET qwip APPEND_STRING PROPERTY LINK_FLAGS " -fsanitize=undefined")
 endif()
+
+# Link against the standalone libLLVM shared library
+llvm_config(qwip-lib USE_SHARED)
+llvm_config(qwip USE_SHARED)
 
 # Testing
 ENABLE_TESTING()
@@ -83,28 +90,12 @@ if (${TEST_WITH_VALGRIND})
   message(STATUS "Testing with valrgind")
 endif()
 
-function(add_qwip_test_example test_name expected_output)
+file(GLOB files "${CMAKE_SOURCE_DIR}/examples/*.qw")
+foreach(path ${files})
+  get_filename_component(filename ${path} NAME)
   if (${TEST_WITH_VALGRIND})
-    add_test("build-example-${test_name}"
-      valgrind --leak-check=full --error-exitcode=1 "${CMAKE_BINARY_DIR}/qwip"
-      "${CMAKE_SOURCE_DIR}/examples/${test_name}.qw" "-o" "${test_name}.qw.out")
+    add_test("run-lit-test-${filename}" "python" "${CMAKE_SOURCE_DIR}/run-examples.py" "-q" "${CMAKE_BINARY_DIR}/qwip" ${path} "--valgrind")
   else()
-    add_test("build-example-${test_name}"
-      qwip
-      "${CMAKE_SOURCE_DIR}/examples/${test_name}.qw" "-o" "${test_name}.qw.out")
+    add_test("run-lit-test-${filename}" "python" "${CMAKE_SOURCE_DIR}/run-examples.py" "-q" "${CMAKE_BINARY_DIR}/qwip" ${path})
   endif()
-
-  add_test("run-example-${test_name}" "python" "${CMAKE_SOURCE_DIR}/compare-outputs.py" "${CMAKE_BINARY_DIR}/${test_name}.qw.out" "${expected_output}")
-endfunction()
-
-# TODO: Update testing such that whenever we want to add a new test, we can
-# just add a new test file or update another testing file instead of having to
-# change the cmake file.
-add_qwip_test_example(0-quickstart "global_day is Wednesday? 1\n")
-add_qwip_test_example(1-empty-main "")
-add_qwip_test_example(2-hello-world "Hello World!\n")
-add_qwip_test_example(3-variable-declaration "Test\nTest\n")
-add_qwip_test_example(4-print-format "10\n11\n")
-add_qwip_test_example(5-fibonacci "0\n1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n")
-add_qwip_test_example(6-structures "7\n3\n")
-add_qwip_test_example(7-arrays "1\n2\n3\n4\n5\n")
+endforeach()

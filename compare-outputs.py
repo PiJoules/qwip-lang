@@ -6,6 +6,7 @@ import sys
 
 
 class MismatchException(Exception):
+
   def __init__(self, cmd, found_out, expected_out):
     msg = """
 Outputs do not match

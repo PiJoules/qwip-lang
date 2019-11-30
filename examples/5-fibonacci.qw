@@ -1,3 +1,5 @@
+// COMPILE: %qwip %src -o %tmp
+// RUN: %tmp
 printf: (fmt: i8*, ...) -> void;
 
 fib: (x: i32) -> i32 {
@@ -8,6 +10,17 @@ fib: (x: i32) -> i32 {
 }
 
 main: () -> i32 {
+  // CHECK-NEXT: 0
+  // CHECK-NEXT: 1
+  // CHECK-NEXT: 1
+  // CHECK-NEXT: 2
+  // CHECK-NEXT: 3
+  // CHECK-NEXT: 5
+  // CHECK-NEXT: 8
+  // CHECK-NEXT: 13
+  // CHECK-NEXT: 21
+  // CHECK-NEXT: 34
+  // CHECK-NEXT: 55
   i: i32 = 0;
   while i <= 10 {
     printf("%d\n", fib(i));

@@ -3,6 +3,11 @@ Comments */
 
 // Single line comments.
 
+// Note: The COMPILE, RUN and CHECK lines are used for this project's testing
+// infrastructure. They are not significant to this tutorial.
+// COMPILE: %qwip %src -o %tmp
+// RUN: %tmp
+
 // Global variables
 // Variables are also be defined in the syntax
 // <variable_name> : <type> = <init_value>;
@@ -24,6 +29,7 @@ global_day: Days = WED;  // Evaluates to 3 as an integer.
 main: () -> i32 {
   // Print using "printf" for formatted printing.
   printf("global_day is Wednesday? %d\n", global_day == WED);
+  // CHECK-NEXT: global_day is Wednesday? 1
 
   ///////////////////////////////////////
   // Types

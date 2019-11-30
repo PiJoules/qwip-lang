@@ -33,9 +33,13 @@ struct Token {
 
 class Lexer {
  public:
-  Lexer(const std::string &filename) : filename_(filename), input_(filename) {}
+  Lexer(const std::string &filename) : filename_(filename), input_(filename) {
+    assert(input_.good() && "Could not open input file for lexer");
+  }
   Lexer(const std::string &filename, const Diagnostic &diag)
-      : filename_(filename), input_(filename), diag_(diag) {}
+      : filename_(filename), input_(filename), diag_(diag) {
+    assert(input_.good() && "Could not open input file for lexer");
+  }
 
   void setLexComments(bool lex_comments = true) {
     lex_comments_ = lex_comments;

@@ -249,12 +249,13 @@ bool Lexer::LexKeywordOrID(Token &result) {
 }
 
 bool Lexer::LexComment(Token &result) {
+  result.loc.line = line_;
+  result.loc.col = col_;
+
   int c = getNextChar();
   assert(c == '/' && "Expected the next character to be a '/'");
 
   std::string comment;
-  result.loc.line = line_;
-  result.loc.col = col_;
   c = getNextChar();
 
   if (c == '*') {

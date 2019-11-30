@@ -1,3 +1,5 @@
+// COMPILE: %qwip %src -o %tmp
+// RUN: %tmp
 printf: (fmt: i8*, ...) -> void;
 
 type A: {
@@ -15,6 +17,9 @@ main: () -> i32 {
   a: A;
   a.y = y;
   a.method = func;
+
+  // CHECK-NEXT: 7
+  // CHECK-NEXT: 3
   printf("%d\n", a.y);
   printf("%d\n", a.method(2));
   ret 0;

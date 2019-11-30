@@ -27,7 +27,7 @@ See more in `examples/`.
 g++-8         # The chosen compiler for building this project
 llvm-8        # The backend for this language
 cmake v3.4.3  # For building the project
-python 2.7    # For running a script used for testing
+python 2.7    # For running the testing suite, code coverage, and code formatting
 valgrind      # (Optional) For testing
 ```
 
@@ -36,35 +36,27 @@ valgrind      # (Optional) For testing
 ```sh
 # Only needs to be done once
 $ sudo apt-get install -y libllvm8 llvm-8 llvm-8-dev llvm-8-runtime lld-8 g++-8 ninja-build
-$ sudo apt-get install -y valgrind clang-format # Optional
+$ sudo apt-get install -y valgrind clang-format lcov # Optional
 $ git clone https://github.com/PiJoules/qwip-lang.git
 $ mkdir qwip-build
 $ cd qwip-build
 
 # Only needs to be once you have the pre-requisites and a build directory.
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 ../qwip-lang  # The LLVM_DIR can be replaced with wherever the `LLVMConfig.cmake` file is located. This is just where apt-get places the library on installation.
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 ../qwip-lang  
 $ ninja qwip
 $ ./qwip ../qwip-lang/examples/2-hello-world.qw -o hello_world.out
 $ ./hello_world.out
 Hello World!
 ```
 
-### Testing
+The `LLVM_DIR` flag can be replaced with wherever the `LLVMConfig.cmake` file is located. This is just where apt-get places the library on installation.
+
+## Testing
 
 You can run tests with
 
 ```sh
 $ ninja test
-```
-
-### Sanitizers
-
-You can build qwip with either Address, Thread, or UndefinedBehavior sanitizers:
-
-```sh
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=ADDRESS ../qwip-lang
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=THREAD ../qwip-lang
-$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ../qwip-lang
 ```
 
 ### Valgrind
@@ -95,6 +87,32 @@ $ ./vg-in-place --leak-check=full --error-exitcode=1 ../qwip ../../qwip-lang/exa
 
 For the second case, I'd instead opt for building with `Address Sanitizer` which should avoid checking llvm library code.
 
+## Build Flags
+
+### Sanitizers
+
+You can build qwip with either Address, Thread, or UndefinedBehavior sanitizers:
+
+```sh
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=ADDRESS ../qwip-lang
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=THREAD ../qwip-lang
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DSANITIZER=UNDEFINED ../qwip-lang
+```
+
+### Code Coverage
+
+You can also opt for instrumenting for collecting code coverage with `lcov` and `gcov`
+
+```sh
+# Inside the build directory
+$ cmake -G Ninja -DLLVM_DIR=/usr/lib/llvm-8/lib/cmake/llvm -DCMAKE_CXX_COMPILER=g++-8 -DCODE_COVERAGE=On ../qwip-lang
+$ ninja  # Build everything
+$ ninja test  # Collect samples
+$ python ../qwip-lang/collect-coverage.py  # Processes the *.gcda files, creates gcov files, and prints a coverage summary
+```
+
+**Note**: I have only tested code coverage collection on linux machines with `lcov-1.14` and `gcov-8` (this is most likely influenced by me using `gcc-8` as the compiler). The `collect-coverage.py` script uses the system `lcov` and `gcov` by default. If the default `lcov` and `gcov` system binaries do not together, you can download or build those specific versions of those binaries and tell the pyton script to use those (`python collect-coverage.py --help`).
+
 ## Debugging
 
 Note: Backtraces are not yet implemented for the compiler. In the event you hit an internal compiler error (such as a segfault or assertion error), you can instead use `gdb` to find a backtrace and debug:
@@ -116,6 +134,8 @@ Periodically, the changes that lead up to the latest green build of `dev` are ro
 Before submitting a change, be sure to run `python format.py` from the project source directory to format the source code.
 
 By defualt, the formatter uses `clang-format`, but this can be changed with a flag (`python format.py --formatter FORMATTER`).
+
+For formatting the python scripts, use: `yapf -i --style='{based_on_style: google, indent_width: 2}' *.py`.
 
 ## Misc Notes
 

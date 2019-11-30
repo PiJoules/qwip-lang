@@ -1,13 +1,21 @@
+// COMPILE: %qwip %src -o %tmp
+// RUN: %tmp
 printf: (fmt: i8*, ...) -> void;
 
 main: () -> i32 {
   ints: i32[4] = [1, 2, 3, 4];
+
+  // CHECK-NEXT: 1
+  // CHECK-NEXT: 2
+  // CHECK-NEXT: 3
+  // CHECK-NEXT: 4
   printf("%d\n", ints[0]);
   printf("%d\n", ints[1]);
   printf("%d\n", ints[2]);
   printf("%d\n", ints[3]);
 
   ints[2] = 5;
+  // CHECK-NEXT: 5
   printf("%d\n", ints[2]);
   ret 0;
 }
