@@ -62,9 +62,7 @@ after_success:
 - wget http://downloads.sourceforge.net/ltp/lcov-1.14.tar.gz
 - tar xvfz lcov-1.14.tar.gz
 
-- lcov-1.14/bin/lcov --gcov-tool gcov-8 --capture --directory . --output-file coverage.info
-- lcov-1.14/bin/lcov --gcov-tool gcov-8 -e coverage.info --output-file coverage.info '*qwip-lang/src/*'
-- lcov-1.14/bin/lcov --gcov-tool gcov-8 --list coverage.info # debug info
+- python ../qwip-lang/collect-coverage.py --lcov-tool lcov-1.14/bin/lcov --gcov-tool gcov-8
 
 # Uploading report to CodeCov
 - bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"
