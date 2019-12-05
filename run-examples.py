@@ -13,6 +13,7 @@ RUN_CMD = "RUN:"
 CHECK_CMD = "CHECK:"
 CHECK_NEXT_CMD = "CHECK-NEXT:"
 EXPECT_NO_OUTPUT = "EXPECT-NO-OUTPUT"
+EXPECT_COMPILE_ERROR = "EXPECT-COMPILE-ERROR"
 
 
 class CheckType:
@@ -36,6 +37,8 @@ def run_lit_test(qwip_file, qwip_exe, placeholders):
   compile_cmd = None
   checks = []
   expect_no_output = False
+  expect_compile_error = False
+
   for line in qwip_file:
     line = line.lstrip()
     if not line.startswith(SINGLE_LINE_COMMENT_START):
@@ -67,24 +70,39 @@ def run_lit_test(qwip_file, qwip_exe, placeholders):
       checks.append((line, CheckType.CHECK_NEXT))
     elif line.strip() == EXPECT_NO_OUTPUT:
       expect_no_output = True
+    elif line.strip() == EXPECT_COMPILE_ERROR:
+      expect_compile_error = True
     else:
       # A regular comment
       continue
 
   assert compile_cmd, "No COMPILE command found"
-  assert run_cmd, "No RUN command found"
   assert bool(
       checks
   ) ^ expect_no_output, "No either EXPECT-NO-CHECKS or at least one CHECK"
 
   # Substitute placeholders
   compile_cmd = replace_placeholders(compile_cmd, placeholders)
-  run_cmd = replace_placeholders(run_cmd, placeholders)
 
-  compile_out = subprocess.check_output(shlex.split(compile_cmd),
-                                        stderr=subprocess.STDOUT)
-  run_out = subprocess.check_output(shlex.split(run_cmd),
-                                    stderr=subprocess.STDOUT)
+  if expect_compile_error:
+    try:
+      subprocess.check_output(shlex.split(compile_cmd),
+                              stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+      compile_out = e.output
+    else:
+      raise RuntimeError(
+          "Expected '{}' to throw an error, but it didn't".format(compile_cmd))
+  else:
+    compile_out = subprocess.check_output(shlex.split(compile_cmd),
+                                          stderr=subprocess.STDOUT)
+
+  if run_cmd:
+    run_cmd = replace_placeholders(run_cmd, placeholders)
+    run_out = subprocess.check_output(shlex.split(run_cmd),
+                                      stderr=subprocess.STDOUT)
+  else:
+    run_out = ""
 
   if expect_no_output:
     output = compile_out + run_out

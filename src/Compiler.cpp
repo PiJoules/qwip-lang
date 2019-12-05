@@ -42,11 +42,12 @@ bool Compiler::CompileExternDecl(const ExternDecl &decl) {
 #define EXTERN_DECL(Kind, Class) \
   case Kind:                     \
     return Compile##Class(decl.getAs<Class>());
-#define NODE(Kind, Class) case Kind:
+#define NODE(Kind, Class)
 #include "Nodes.def"
-    break;
+    default:  // LCOV_EXCL_LINE
+      break;  // LCOV_EXCL_LINE
   }
-  UNREACHABLE("Unhandled External declaration");
+  UNREACHABLE("Unhandled External declaration");  // LCOV_EXCL_LINE
   return false;
 }
 
@@ -154,9 +155,10 @@ bool Compiler::CompileTypeDef(const TypeDef &type_def,
         break;
       }
 #define MEMBER_DECL(Kind, Class)
-#define NODE(Kind, Class) case Kind:
+#define NODE(Kind, Class)
 #include "Nodes.def"
-        UNREACHABLE("Unexpected member decl.");
+      default:                                   // LCOV_EXCL_LINE
+        UNREACHABLE("Unexpected member decl.");  // LCOV_EXCL_LINE
         return false;
     }
   }
@@ -198,25 +200,20 @@ bool Compiler::CompileExternVarDef(const ExternVarDef &externdef) {
   std::unique_ptr<Type> type = decl.getType();
   llvm::Type *llvm_type = toLLVMType(*type);
 
-  llvm::GlobalVariable *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(
+  llvm::GlobalVariable *global = llvm::cast_or_null<llvm::GlobalVariable>(
       getLLVMModule().getNamedValue(decl.getName()));
-  if (!global) {
-    llvm::Constant *init;
-    llvm::Value *init_val;
-    llvm::IRBuilder<> builder(llvm_context_);
-    if (!CompileExpr(def.getInit(), builder, init_val)) return false;
+  assert(!global && "This extern variable was previously defined");
 
-    init = llvm::dyn_cast<llvm::Constant>(init_val);
-    if (!init) {
-      std::cerr << "The initial value of this global is not a constant.\n";
-      return false;
-    }
+  llvm::Constant *init;
+  llvm::Value *init_val;
+  llvm::IRBuilder<> builder(llvm_context_);
+  if (!CompileExpr(def.getInit(), builder, init_val)) return false;
 
-    return new llvm::GlobalVariable(
-        getLLVMModule(), llvm_type, /*isConstant=*/true,
-        llvm::GlobalValue::ExternalLinkage, init, decl.getName());
-  }
-  return global;
+  init = llvm::cast<llvm::Constant>(init_val);
+
+  return new llvm::GlobalVariable(
+      getLLVMModule(), llvm_type, /*isConstant=*/true,
+      llvm::GlobalValue::ExternalLinkage, init, decl.getName());
 }
 
 bool Compiler::CompileStmts(const std::vector<std::unique_ptr<Stmt>> &stmts,
@@ -270,17 +267,15 @@ bool Compiler::CompileFuncDef(const FuncDef &funcdef, llvm::IRBuilder<> &) {
 
 bool Compiler::CompileStmt(const Stmt &stmt, llvm::IRBuilder<> &builder) {
   switch (stmt.getKind()) {
-#define NODE(Kind, Class)                              \
-  case Kind:                                           \
-    std::cerr << "Invalid stmt kind: " STR(Kind) "\n"; \
-    return false;
+#define NODE(Kind, Class)
 #define STMT(Kind, Class) \
   case Kind:              \
     return Compile##Class(stmt.getAs<Class>(), builder);
 #include "Nodes.def"
+    default:                                    // LCOV_EXCL_LINE
+      UNREACHABLE("Unhandled statement kind");  // LCOV_EXCL_LINE
+      return false;
   }
-  UNREACHABLE("Unhandled statement kind");
-  return false;
 }
 
 bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
@@ -291,14 +286,10 @@ bool Compiler::CompileExpr(const Expr &expr, llvm::IRBuilder<> &builder,
   case Kind:              \
     return Compile##Class(expr.getAs<Class>(), builder, result);
 #include "Nodes.def"
-
-#define EXPR(Kind, Class)
-#define NODE(Kind, Class) case Kind:
-#include "Nodes.def"
-    break;
+    default:                                     // LCOV_EXCL_LINE
+      UNREACHABLE("Unhandled expression kind");  // LCOV_EXCL_LINE
+      return false;
   }
-  UNREACHABLE("Unhandled expression kind");
-  return false;
 }
 
 bool Compiler::CompileInt(const Int &expr, llvm::IRBuilder<> &builder,
@@ -352,19 +343,15 @@ llvm::Value *Compiler::getAddrOfVariable(const std::string &name,
   if (result) return result;
 
   // Then check globals.
-  if (llvm::GlobalValue *val = getLLVMModule().getNamedValue(name)) return val;
-
-  return nullptr;
+  llvm::GlobalValue *val = getLLVMModule().getNamedValue(name);
+  assert(val && "Was not able to find this named variable");
+  return val;
 }
 
 bool Compiler::CompileID(const ID &expr, llvm::IRBuilder<> &builder,
                          llvm::Value *&result) {
   llvm::Value *var_addr =
       getAddrOfVariable(expr.getName(), builder.GetInsertBlock()->getParent());
-  if (!var_addr) {
-    std::cerr << "Unable to find symbol for '" << expr.getName() << "'\n";
-    return false;
-  }
 
   const auto *ptr_type = llvm::cast<llvm::PointerType>(var_addr->getType());
   if (ptr_type->getElementType()->isFunctionTy() ||
@@ -593,10 +580,10 @@ bool Compiler::CompileAssign(const Assign &stmt, llvm::IRBuilder<> &builder) {
       break;
     }
 #define ASSIGNABLE(Kind, Class)
-#define NODE(Kind, Class) case Kind:
+#define NODE(Kind, Class)
 #include "Nodes.def"
-      UNREACHABLE("Unhandled assignable kind.");
-      return false;
+    default:                                      // LCOV_EXCL_LINE
+      UNREACHABLE("Unhandled assignable kind.");  // LCOV_EXCL_LINE
   }
   builder.CreateStore(init, value_addr, /*isVolatile=*/false);
   return true;
@@ -623,9 +610,7 @@ bool Compiler::CompileVarDef(const VarDef &stmt, llvm::IRBuilder<> &builder) {
 
     uint64_t dst_alignment =
         value_addr->getPointerAlignment(getLLVMDataLayout());
-    assert(dst_alignment != 1 && "Could not get the dst alignment");
     uint64_t src_alignment = init->getPointerAlignment(getLLVMDataLayout());
-    assert(src_alignment != 1 && "Could not get the src alignment");
     builder.CreateMemMove(value_addr, static_cast<unsigned>(dst_alignment),
                           init, static_cast<unsigned>(src_alignment), size);
   } else {
@@ -647,11 +632,16 @@ bool Compiler::SaveToExecutable(const std::string &input_filepath,
   std::string err;
   const llvm::Target *Target =
       llvm::TargetRegistry::lookupTarget(TargetTriple, err);
+
+  // Only exclude these lines from coverage since we will ideally be collecting
+  // on a target that we can build for.
+  // LCOV_EXCL_START
   if (!Target) {
     std::cerr << "Failed to lookup target " << TargetTriple << ": " << err
               << "\n";
     return false;
   }
+  // LCOV_EXCL_END
 
   llvm::TargetOptions opt;
   std::unique_ptr<llvm::TargetMachine> TheTargetMachine(

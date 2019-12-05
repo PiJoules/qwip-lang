@@ -88,6 +88,7 @@ bool Parser::ParseNamedExternDeclOrDef(std::unique_ptr<ExternDecl> &result) {
     std::unique_ptr<VarDef> vardef(static_cast<VarDef *>(func.release()));
     result = std::make_unique<ExternVarDef>(vardef);
   } else {
+    assert(func->getKind() == NODE_VARDECL && "Unhandled decl or def kind");
     std::unique_ptr<VarDecl> vardecl(static_cast<VarDecl *>(func.release()));
     result = std::make_unique<ExternVarDecl>(vardecl);
   }
@@ -192,6 +193,8 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
     return false;
   }
 
+  EnterScope();
+
   // Member declarations
   std::vector<std::unique_ptr<MemberDecl>> members;
   while (1) {
@@ -219,6 +222,8 @@ bool Parser::ParseExternTypeDef(std::unique_ptr<ExternTypeDef> &result) {
       return false;
     }
   }
+
+  ExitScope();
 
   // }
   TRY_LEX(lexer_, tok);
@@ -460,6 +465,12 @@ bool Parser::ParseNamedDeclOrDefAfterID(const Token &id_tok,
                                         std::unique_ptr<Stmt> &result) {
   std::string name = id_tok.chars;
   SourceLocation loc = id_tok.loc;
+
+  if (getContext().ImmediateVarExists(name)) {
+    diag_.Err(loc) << "Variable '" << name
+                   << "' aleady exists in the current scope.";
+    return false;
+  }
 
   Token tok;
   TRY_LEX(lexer_, tok);

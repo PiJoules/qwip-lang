@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src --dump-llvm
+
+// CHECK:      define i32 @func() {
+// CHECK-NEXT: entry:
+// CHECK-NEXT:   ret i32 0
+// CHECK-NEXT: }
+
+func: () -> i32 {}

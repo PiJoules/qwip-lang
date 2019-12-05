@@ -1063,6 +1063,20 @@ class Context {
     }
     return nullptr;
   }
+
+  const Type *getImmediateVarType(const std::string &varname) const {
+    auto foundtype = vars_.find(varname);
+    if (foundtype != vars_.end()) return foundtype->second.get();
+    return nullptr;
+  }
+
+  bool VarExists(const std::string &varname) const {
+    return getVarType(varname);
+  }
+  bool ImmediateVarExists(const std::string &varname) const {
+    return getImmediateVarType(varname);
+  }
+
   bool isEnumLiteral(const std::string &name) const {
     const Context *context = this;
     while (context) {
@@ -1131,12 +1145,6 @@ class Context {
     return enum_names_.find(varname) != enum_names_.end();
   }
 
-  const Type *getImmediateVarType(const std::string &varname) const {
-    auto foundtype = vars_.find(varname);
-    if (foundtype != vars_.end()) return foundtype->second.get();
-    return nullptr;
-  }
-
   Context *parent_context_;
   TypeMap types_;
   VarMap vars_;
@@ -1197,6 +1205,11 @@ class Parser {
            "point to any context.");
     return *current_context_;
   }
+  bool CurrentContextIsGlobal() const {
+    assert(global_context_ && current_context_ &&
+           "Expected the global and current context to have been initialized.");
+    return global_context_.get() == current_context_;
+  }
 
   const Type *getTypeForVar(const std::string &name) const {
     return getContext().getVarType(name);
@@ -1221,6 +1234,11 @@ class Parser {
   }
   void ExitScope() { current_context_ = getContext().getParentContext(); }
   const Diagnostic &getDiag() const { return diag_; }
+
+  Context &getGlobalContext() {
+    assert(global_context_ && "The global context was not initialized.");
+    return *global_context_;
+  }
 
   Lexer &lexer_;
   const Diagnostic diag_;

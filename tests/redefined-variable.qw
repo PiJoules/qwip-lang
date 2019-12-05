@@ -1,0 +1,9 @@
+// COMPILE: %qwip %src -o %tmp
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Variable 'x' aleady exists in the current scope.
+// CHECK-NEXT: x: i32 = 4;
+// CHECK-NEXT: ^
+
+x: i32 = 2;
+x: i32 = 4;

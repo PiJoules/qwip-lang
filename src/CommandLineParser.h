@@ -55,7 +55,7 @@ class CommandLineParser {
         // Parsing positional arguments.
         if (current_positional_flag_ >= pos_handlers_.size()) {
           std::cerr
-              << "Too many positional arguments provieded. Expected at most "
+              << "Too many positional arguments provided. Expected at most "
               << pos_handlers_.size() << ".\n";
           return false;
         }

@@ -29,8 +29,21 @@ def main(lcov_tool=DEFAULT_LCOV_TOOL, gcov_tool=DEFAULT_GCOV_TOOL):
 
   # Retain coverage for only the files in this project.
   if subprocess.check_call(base_lcov_cmd + [
-      "-e", "coverage.info", "--output-file", "coverage.info",
-      "*qwip-lang/src/*"
+      "-e",
+      "coverage.info",
+      "--output-file",
+      "coverage.info",
+      "*qwip-lang/src/*",
+  ]):
+    return False
+
+  # Remove external sources.
+  if subprocess.check_call(base_lcov_cmd + [
+      "--remove",
+      "coverage.info",
+      "--output-file",
+      "coverage.info",
+      "*qwip-lang/src/catch.hpp",
   ]):
     return False
 
@@ -39,16 +52,17 @@ def main(lcov_tool=DEFAULT_LCOV_TOOL, gcov_tool=DEFAULT_GCOV_TOOL):
     return False
 
   # Run gcov on all generated .gcda files to get info for source files.
-  for root, _, files in os.walk("CMakeFiles/qwip.dir/"):
+  gc_files = []
+  for root, _, files in os.walk("CMakeFiles/"):
     for name in files:
       _, ext = os.path.splitext(name)
-      if ext != ".gcda":
+      if not (ext == ".gcda" or ext == ".gcno"):
         continue
       path = os.path.join(root, name)
-      with open(os.devnull, "w") as null:
-        if subprocess.check_call([gcov_tool, path], stdout=null):
-          return False
-      print("Generated gcov file for", path)
+      gc_files.append(path)
+  with open(os.devnull, "w") as null:
+    subprocess.check_output([gcov_tool] + gc_files)
+  print("Generated gcov files from", gc_files)
 
   return True
 
