@@ -62,7 +62,7 @@ after_success:
 - wget http://downloads.sourceforge.net/ltp/lcov-1.14.tar.gz
 - tar xvfz lcov-1.14.tar.gz
 
-- python ../qwip-lang/collect-coverage.py --lcov-tool lcov-1.14/bin/lcov --gcov-tool gcov-8
+- python ../collect-coverage.py --lcov-tool lcov-1.14/bin/lcov --gcov-tool gcov-8
 
 # Uploading report to CodeCov
 - bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"
