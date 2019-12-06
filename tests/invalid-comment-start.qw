@@ -1,0 +1,7 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a comment to start with '//'.
+// CHECK-NEXT: /x
+// CHECK-NEXT: ^
+/x

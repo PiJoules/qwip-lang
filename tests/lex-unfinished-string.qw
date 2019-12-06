@@ -1,0 +1,5 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Reached end of file. Could not finish lexing string.
+"abc

@@ -1,0 +1,3 @@
+// COMPILE: %qwip %src --dump-tokens --lex-comments
+
+// CHECK-NEXT: <TOK_COMMENT chars=' COMPILE: %qwip %src --dump-tokens --lex-comments

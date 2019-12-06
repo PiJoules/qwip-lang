@@ -1,0 +1,5 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Could not find the end of the last multiline comment.
+/* Unfini

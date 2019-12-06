@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Unable to lex character '`'.
+// CHECK-NEXT: `
+// CHECK-NEXT: ^
+
+// It's not so much that this character is invalid, but there are no tokens
+// that will start with this character.
+`

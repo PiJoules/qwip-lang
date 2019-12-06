@@ -25,8 +25,7 @@ struct Token {
     std::ostringstream os;
     os << "<" << TokenKindAsString(kind) << " "
        << "chars='" << chars << "' "
-       << "loc=" << loc.toString() << " "
-       << ">";
+       << "loc=" << loc.toString() << ">";
     return os.str();
   }
 };

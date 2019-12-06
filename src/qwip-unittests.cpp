@@ -2,6 +2,7 @@
 
 #include "CommandLineParser.h"
 #include "Diagnostics.h"
+#include "Lexer.h"
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
@@ -119,7 +120,8 @@ TEST_CASE("Test getCurrentFlag()", "[CommandLineParser]") {
 
 TEST_CASE("Invalid SourceLocation", "[SourceLocation]") {
   SourceLocation loc;
-  REQUIRE((loc.toString().find("<unknown file>") == 0 && "Expected the source location to be unknown"));
+  REQUIRE((loc.toString().find("<unknown file>") == 0 &&
+           "Expected the source location to be unknown"));
 }
 
 TEST_CASE("Note message", "[Diagnostic]") {
@@ -136,6 +138,10 @@ TEST_CASE("Diagnostic char printing", "[Diagnostic]") {
   SourceLocation loc;
   diag.Note(loc) << 'c';
   REQUIRE(s.str() == "<unknown file>:0:0: note: c\n");
+}
+
+TEST_CASE("TokenKind to string", "[Lexer]") {
+  REQUIRE(TokenKindAsString(TOK_ID) == "TOK_ID");
 }
 
 }  // namespace

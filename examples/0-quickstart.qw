@@ -31,6 +31,11 @@ main: () -> i32 {
   printf("global_day is Wednesday? %d\n", global_day == WED);
   // CHECK-NEXT: global_day is Wednesday? 1
 
+  // Use \n and \t for printing newlines and tabs.
+  // For everything else, it just means a character literal.
+  printf("\tTa\b\n");
+  // CHECK-NEXT: Tab
+
   ///////////////////////////////////////
   // Types
   ///////////////////////////////////////

@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected '...' to indicate variadic arguments.
+// CHECK-NEXT: func: (i: i32, ..x) -> i32;
+// CHECK-NEXT:                  ^
+
+func: (i: i32, ..x) -> i32;

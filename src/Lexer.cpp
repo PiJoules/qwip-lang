@@ -11,7 +11,7 @@ std::string TokenKindAsString(TokenKind kind) {
     return STR(Kind);
 #include "Tokens.def"
   }
-  UNREACHABLE("Unknown token");
+  UNREACHABLE("Unknown token");  // LCOV_EXCL_LINE
   return "";
 }
 
@@ -85,7 +85,7 @@ bool Lexer::Lex(Token &result) {
 
       if (getNextChar() != '.') {  // 3 ...
         result.loc.line = line_;
-        result.loc.col = col_;
+        result.loc.col = col_ - 1;
         getDiag().Err(result.loc)
             << "Expected '...' to indicate variadic arguments.";
         return false;
@@ -176,13 +176,13 @@ bool Lexer::LexString(Token &result) {
         case 't':
           result.chars.push_back('\t');
           break;
-        case EOF:
-          getDiag().Err(getCurrentLoc())
-              << "Reached end of file. Could not finish string.";
-          return false;
         default:
           result.chars.push_back(static_cast<char>(next_char));
       }
+    } else if (next_char == EOF) {
+      getDiag().Err(getCurrentLoc())
+          << "Reached end of file. Could not finish lexing string.";
+      return false;
     } else {
       result.chars.push_back(static_cast<char>(getNextChar()));
     }
