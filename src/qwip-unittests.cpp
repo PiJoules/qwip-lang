@@ -1,6 +1,7 @@
 #include <vector>
 
 #include "CommandLineParser.h"
+#include "Diagnostics.h"
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
@@ -114,6 +115,27 @@ TEST_CASE("Test getCurrentFlag()", "[CommandLineParser]") {
   DummyArgs args;
   Arguments argv({"exe", "-arg"});
   REQUIRE(parser.Parse(args, 2, argv.get()));
+}
+
+TEST_CASE("Invalid SourceLocation", "[SourceLocation]") {
+  SourceLocation loc;
+  REQUIRE((loc.toString().find("<unknown file>") == 0 && "Expected the source location to be unknown"));
+}
+
+TEST_CASE("Note message", "[Diagnostic]") {
+  std::stringstream s;
+  Diagnostic diag(s);
+  SourceLocation loc;
+  diag.Note(loc);
+  REQUIRE(s.str() == "<unknown file>:0:0: note: \n");
+}
+
+TEST_CASE("Diagnostic char printing", "[Diagnostic]") {
+  std::stringstream s;
+  Diagnostic diag(s);
+  SourceLocation loc;
+  diag.Note(loc) << 'c';
+  REQUIRE(s.str() == "<unknown file>:0:0: note: c\n");
 }
 
 }  // namespace

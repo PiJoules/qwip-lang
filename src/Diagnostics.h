@@ -39,9 +39,6 @@ enum DiagKind {
   DIAG_NOTE,
 };
 
-// Number of max characters to display after the source location in a file.
-constexpr size_t kMaxDiagLineChars = 80;
-
 class Message {
  public:
   Message(std::ostream &out, const SourceLocation &loc, DiagKind kind)
