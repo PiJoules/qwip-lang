@@ -41,6 +41,7 @@ def main(lcov_tool=DEFAULT_LCOV_TOOL, gcov_tool=DEFAULT_GCOV_TOOL):
   if subprocess.check_call(base_lcov_cmd + [
       "--remove",
       "coverage.info",
+      "*.def",
       "--output-file",
       "coverage.info",
       "*qwip-lang/src/catch.hpp",
