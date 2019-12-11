@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: The initializer type (i8[4]) does not match the declaration type (i32).
+// CHECK-NEXT: x: i32 = "abc";
+// CHECK-NEXT: ^
+
+x: i32 = "abc";

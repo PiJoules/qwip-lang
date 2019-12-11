@@ -18,7 +18,7 @@ static std::string TypeKindToString(TypeKind kind) {
     return STR(Kind);
 #include "Types.def"
   }
-  UNREACHABLE("Unknown type");
+  UNREACHABLE("Unknown type");  // LCOV_EXCL_LINE
   return "";
 }
 
@@ -29,7 +29,7 @@ std::string NodeKindToString(NodeKind kind) {
     return STR(Kind);
 #include "Nodes.def"
   }
-  UNREACHABLE("Unknown node");
+  UNREACHABLE("Unknown node");  // LCOV_EXCL_LINE
   return "";
 }
 
@@ -61,7 +61,8 @@ bool Parser::ParseModule(std::unique_ptr<Module> &result) {
       decls.push_back(std::move(externenumdef));
     } else {
       diag_.Err(lookahead.loc)
-          << "Unexpected token found. External declarations in a module should "
+          << "Unexpected token found (" << TokenKindAsString(lookahead.kind)
+          << "). External declarations in a module should "
              "start with an ID.";
       return false;
     }
@@ -352,16 +353,15 @@ bool Parser::ParseStmt(std::unique_ptr<Stmt> &result) {
     // ;
     TRY_LEX(lexer_, tok);
     if (tok.kind != TOK_SEMICOL) {
-      diag_.Err(tok.loc)
-          << "Expected a ';' to denote the end of a return statement.";
+      diag_.Err(tok.loc) << "Expected a ';' to denote the end of a statement.";
       return false;
     }
 
     return true;
   }
 
-  diag_.Err(lookahead.loc)
-      << "Was not able to parse the start of this statement.";
+  // TODO: Make a more descriptive error message.
+  diag_.Err(lookahead.loc) << "Invalid statement.";
   return false;
 }
 
@@ -428,7 +428,7 @@ bool Parser::ParseIf(std::unique_ptr<If> &result) {
 
   // { ... }
   std::vector<std::unique_ptr<Stmt>> else_stmts;
-  if (!EnterScopeAndParseBracedStmts(stmts)) return false;
+  if (!EnterScopeAndParseBracedStmts(else_stmts)) return false;
 
   result = std::make_unique<If>(ifloc, cond, stmts, else_stmts);
   return true;
@@ -653,11 +653,7 @@ bool Parser::ParseFuncTypeNode(std::unique_ptr<FuncTypeNode> &result) {
       TRY_PEEK(lexer_, tok);
       if (tok.kind == TOK_VARARG) {
         TRY_LEX(lexer_, tok);
-        if (isvararg) {
-          // Was declared twice.
-          diag_.Err(tok.loc) << "Can only declare variadic arguments once.";
-          return false;
-        }
+        assert(!isvararg && "Can only declare variadic arguments once.");
         isvararg = true;
 
         TRY_PEEK(lexer_, tok);
@@ -809,7 +805,7 @@ StructType TypeDef::getStructType() const {
       auto type = vardecl.getType();
       structtype.addMember(vardecl.getName(), type);
     } else {
-      UNREACHABLE("Unexpected member decl.");
+      UNREACHABLE("Unexpected member decl.");  // LCOV_EXCL_LINE
     }
   }
   return structtype;
@@ -821,7 +817,7 @@ bool Parser::TryToMakeCallAfterExpr(std::unique_ptr<Expr> &expr) {
   if (tok.kind == TOK_LPAR) {
     if (expr->getType()->getKind() != TYPE_FUNC) {
       diag_.Err(tok.loc)
-          << "The expression we are calling must be a function type.";
+          << "The expression being called must be a function type.";
       return false;
     }
 
@@ -940,7 +936,7 @@ std::unique_ptr<Int> Int::fromToken(const Token &tok) {
   } else if (i == str.size()) {
     num_bits = kDefaultIntNumBits;
   } else {
-    UNREACHABLE("Did not finish parsing the whole string.");
+    UNREACHABLE("Did not finish parsing the whole string.");  // LCOV_EXCL_LINE
   }
 
   return std::make_unique<Int>(tok.loc, result, num_bits);
@@ -1033,80 +1029,82 @@ bool Parser::ParseSingleExpr(std::unique_ptr<Expr> &result) {
 
 // We check for is_str, since we won't be returning an underlying type in the
 // event it is a string type.
-static void GetPointerLikeAttributes(const Type &type, bool &has_size,
+static bool GetPointerLikeAttributes(const Type &type, bool &has_size,
                                      size_t &size, const Type *&underlying_type,
                                      bool &is_str) {
   if (const auto *ptr = type.maybeAs<PtrType>()) {
     has_size = false;
     is_str = false;
     underlying_type = &ptr->getPointeeType();
+    return true;
   } else if (const auto *str = type.maybeAs<StrType>()) {
     has_size = true;
     size = str->getSize();
     is_str = true;
+    return true;
   } else if (const auto *arr = type.maybeAs<ArrayType>()) {
     has_size = true;
     size = arr->getNumElems();
     is_str = false;
     underlying_type = &arr->getElementType();
-  } else {
-    UNREACHABLE("Unexpected pointer-like type");
+    return true;
   }
+  return false;
 }
 
-static bool PointerLikeTypesAreEqual(const Type &type1, const Type &type2) {
-  bool type1_has_size, type2_has_size, is_str1, is_str2;
-  size_t size1, size2;
-  const Type *underlying_type1, *underlying_type2;
-  GetPointerLikeAttributes(type1, type1_has_size, size1, underlying_type1,
-                           is_str1);
-  GetPointerLikeAttributes(type2, type2_has_size, size2, underlying_type2,
-                           is_str2);
+static bool PointerLikeTypesAreEqual(const Type &lhs_type,
+                                     const Type &rhs_type) {
+  bool lhs_type_has_size, rhs_type_has_size, lhs_is_str, rhs_is_str;
+  size_t lhs_size, rhs_size;
+  const Type *underlying_lhs_type, *underlying_rhs_type;
+  assert(GetPointerLikeAttributes(lhs_type, lhs_type_has_size, lhs_size,
+                                  underlying_lhs_type, lhs_is_str) &&
+         "This function should only be called by valid string-like types.");
+  if (!GetPointerLikeAttributes(rhs_type, rhs_type_has_size, rhs_size,
+                                underlying_rhs_type, rhs_is_str))
+    return false;
 
-  if (is_str1) {
+  if (lhs_is_str) {
     // 1 is a string
-    if (is_str2) {
+    if (rhs_is_str) {
       // 2 is a string
-      return size1 == size2;
-    } else if (type1_has_size) {
-      // 2 is an array
-      if (const auto *int_type = underlying_type2->maybeAs<IntType>()) {
-        return int_type->getNumBits() == kNumCharBits && size1 == size2;
-      }
-      return false;
+      return lhs_size == rhs_size;
+    } else if (rhs_type_has_size) {
+      assert(rhs_type.getKind() == TYPE_ARRAY);
+      const IntType *int_type;
+      return (int_type = underlying_rhs_type->maybeAs<IntType>()) &&
+             int_type->getNumBits() == kNumCharBits && lhs_size == rhs_size;
     } else {
-      // 2 is a ptr
-      if (const auto *pointee = underlying_type2->maybeAs<IntType>()) {
-        return pointee->getNumBits() == kNumCharBits;
-      }
-      return false;
+      assert(rhs_type.getKind() == TYPE_PTR);
+      const IntType *pointee;
+      return (pointee = underlying_rhs_type->maybeAs<IntType>()) &&
+             pointee->getNumBits() == kNumCharBits;
     }
-  } else if (type1_has_size) {
+  } else if (lhs_type_has_size) {
     // 1 is an array
-    if (is_str2) {
+    if (rhs_is_str) {
       // 2 is a string
-      if (const auto *int_type = underlying_type1->maybeAs<IntType>()) {
-        return int_type->getNumBits() == kNumCharBits && size1 == size2;
-      }
-      return false;
-    } else if (type1_has_size) {
-      // 2 is an array
-      return size1 == size2 && (*underlying_type1 == *underlying_type2);
+      const IntType *int_type;
+      return (int_type = underlying_lhs_type->maybeAs<IntType>()) &&
+             int_type->getNumBits() == kNumCharBits && lhs_size == rhs_size;
+    } else if (rhs_type_has_size) {
+      assert(rhs_type.getKind() == TYPE_ARRAY);
+      return lhs_size == rhs_size &&
+             (*underlying_lhs_type == *underlying_rhs_type);
     } else {
-      // 2 is a ptr
-      return *underlying_type1 == *underlying_type2;
+      assert(rhs_type.getKind() == TYPE_PTR);
+      return *underlying_lhs_type == *underlying_rhs_type;
     }
   } else {
     // 1 is a pointer
-    if (is_str2) {
+    if (rhs_is_str) {
       // 2 is a string
-      if (const auto *int_type = underlying_type1->maybeAs<IntType>()) {
-        return int_type->getNumBits() == kNumCharBits;
-      }
-      return false;
+      const IntType *int_type;
+      return (int_type = underlying_lhs_type->maybeAs<IntType>()) &&
+             int_type->getNumBits() == kNumCharBits;
     } else {
       // 2 is an array or pointer
-      return *underlying_type1 == *underlying_type2;
+      return *underlying_lhs_type == *underlying_rhs_type;
     }
   }
 }

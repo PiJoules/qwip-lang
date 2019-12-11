@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Unexpected token found (TOK_INT). External declarations in a module should start with an ID.
+// CHECK-NEXT: 2
+// CHECK-NEXT: ^
+
+2

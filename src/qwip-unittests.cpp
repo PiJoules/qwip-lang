@@ -3,6 +3,7 @@
 #include "CommandLineParser.h"
 #include "Diagnostics.h"
 #include "Lexer.h"
+#include "Parser.h"
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
@@ -142,6 +143,46 @@ TEST_CASE("Diagnostic char printing", "[Diagnostic]") {
 
 TEST_CASE("TokenKind to string", "[Lexer]") {
   REQUIRE(TokenKindAsString(TOK_ID) == "TOK_ID");
+}
+
+TEST_CASE("String type comparisons", "[QwipTypes]") {
+  StrType str_type(5);
+  StrType str_type2(5);
+  REQUIRE(str_type == str_type2);
+  std::unique_ptr<Type> char_type(new IntType(kNumCharBits));
+  ArrayType arr_type(char_type, 5);
+
+  {
+    std::unique_ptr<Type> char_type(new IntType(kNumCharBits));
+    ArrayType arr_type(char_type, 5);
+    REQUIRE(str_type == arr_type);
+    REQUIRE(arr_type == str_type);
+  }
+  {
+    std::unique_ptr<Type> char_type(new IntType(kNumCharBits));
+    ArrayType arr_type(char_type, 6);
+    REQUIRE(str_type != arr_type);
+  }
+  {
+    std::unique_ptr<Type> char_type(new IntType(kNumCharBits));
+    std::unique_ptr<Type> nested_arr_type(new ArrayType(char_type, 6));
+    ArrayType arr_type(nested_arr_type, 6);
+    REQUIRE(str_type != arr_type);
+  }
+  {
+    // A pointer type can be equivalent to a string type as long as it is a char
+    // pointer.
+    std::unique_ptr<Type> char_type(new IntType(kNumCharBits));
+    PtrType ptr_type(char_type);
+    REQUIRE(str_type == ptr_type);
+    REQUIRE(arr_type == ptr_type);
+    REQUIRE(ptr_type == str_type);
+    REQUIRE(ptr_type == arr_type);
+  }
+  {
+    IntType char_type(kNumCharBits);
+    REQUIRE(str_type != char_type);
+  }
 }
 
 }  // namespace

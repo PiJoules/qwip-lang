@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Invalid statement.
+// CHECK-NEXT:   2;
+// CHECK-NEXT:   ^
+
+func: () -> void {
+  2;
+}

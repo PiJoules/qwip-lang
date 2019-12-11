@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+arr: i32[2];
+
+// CHECK-NEXT: error: Expected the closing ']' for an array subscript.
+
+func: () -> void {
+  arr[1
+}

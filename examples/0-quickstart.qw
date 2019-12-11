@@ -50,7 +50,16 @@ main: () -> i32 {
   boolean_var: i1 = 0i1;
 
   // Boolean literals.
+  boolean_var = false;
   boolean_var = true;
+
+  // If else statements.
+  // CHECK-NEXT: math works!
+  if 2 < 3 {
+    printf("math works!\n");
+  } else {
+    printf("this should never print\n");
+  }
 
   ret 0;
 }

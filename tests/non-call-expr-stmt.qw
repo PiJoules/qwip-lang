@@ -1,0 +1,9 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expressions that form statements can only be call expressions. Found NODE_BINOP.
+// CHECK-NEXT:   x + 2;
+// CHECK-NEXT:   ^
+func: (x: i32) -> void {
+  x + 2;
+}

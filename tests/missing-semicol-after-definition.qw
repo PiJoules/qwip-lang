@@ -1,0 +1,6 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a ';' to denote the end of a variable definition.
+
+x: i32 = 2

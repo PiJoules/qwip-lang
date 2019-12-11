@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a ';' to indicate a variable declaration, '=' to indicate a variable definition, or start of a function definition.
+// CHECK-NEXT: x: i32 2
+// CHECK-NEXT:        ^
+
+x: i32 2

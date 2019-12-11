@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Unknown type 'unknown_type'.
+// CHECK-NEXT: x: unknown_type;
+// CHECK-NEXT:    ^
+
+x: unknown_type;

@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected an opening '{' in the custom enum.
+// CHECK-NEXT: enum x a
+// CHECK-NEXT:        ^
+
+enum x a

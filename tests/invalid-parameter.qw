@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a : after the ID in a parameter.
+// CHECK-NEXT: func: (x
+// CHECK-NEXT:        ^
+
+func: (x

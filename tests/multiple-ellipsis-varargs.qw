@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: If there is a variadic argument, it can only be the last argument in the function.
+// CHECK-NEXT: func: (x: i32, ..., ...) ->
+// CHECK-NEXT:                   ^
+
+func: (x: i32, ..., ...) ->

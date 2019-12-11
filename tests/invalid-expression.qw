@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected an expression. Found TOK_LT.
+// CHECK-NEXT:   ret <;
+// CHECK-NEXT:       ^
+
+func: () -> void {
+  ret <;
+}

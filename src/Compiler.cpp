@@ -76,7 +76,9 @@ llvm::Type *Compiler::FuncTypeToLLVMType(const FuncType &type) {
 }
 
 llvm::Type *Compiler::IntTypeToLLVMType(const IntType &type) {
-  return llvm::IntegerType::get(llvm_context_, type.getNumBits());
+  // Always make sure the type is at least 8 bits.
+  unsigned numbits = std::max(type.getNumBits(), 8u);
+  return llvm::IntegerType::get(llvm_context_, numbits);
 }
 
 llvm::Type *Compiler::VoidTypeToLLVMType(const VoidType &type) {
@@ -530,7 +532,7 @@ bool Compiler::CompileIf(const If &stmt, llvm::IRBuilder<> &builder) {
   llvm::BasicBlock *elsebb = llvm::BasicBlock::Create(llvm_context_, "else");
   llvm::BasicBlock *mergebb = llvm::BasicBlock::Create(llvm_context_, "merge");
 
-  builder.CreateCondBr(cond_val, thenbb, mergebb);
+  builder.CreateCondBr(cond_val, thenbb, elsebb);
 
   // Emit the then block.
   builder.SetInsertPoint(thenbb);

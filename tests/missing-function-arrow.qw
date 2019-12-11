@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected -> to indicate the return type.
+// CHECK-NEXT: func: () void;
+// CHECK-NEXT:          ^
+
+func: () void;

@@ -1,0 +1,9 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected the expression to be a struct type. Found 'TYPE_INT'
+// CHECK-NEXT  x.method();
+// CHECK-NEXT  ^
+func: (x: i32) -> void {
+  x.method();
+}

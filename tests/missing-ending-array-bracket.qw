@@ -1,0 +1,6 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a ',' to separate array elements or a closing ']' when parsing the elements of an array.
+
+arr: i32[2] = [ 2, 3 

@@ -1,0 +1,7 @@
+// COMPILE: %qwip %src
+// EXPECT-NO-OUTPUT
+
+main: () -> i32 {
+  str: i8* = "str";
+  ret 0;
+}

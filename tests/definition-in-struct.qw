@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: A new struct can only contain declarations.
+// CHECK-NEXT:   x: i32 = 2;
+// CHECK-NEXT:   ^
+
+type T: {
+  x: i32 = 2;
+}

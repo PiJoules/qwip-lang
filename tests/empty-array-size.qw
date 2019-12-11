@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Cannot declare an empty array type.
+// CHECK-NEXT: arr: i32[0];
+// CHECK-NEXT:          ^
+
+arr: i32[0];

@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Unknown variable 'x'.
+// CHECK-NEXT:   ret x;
+// CHECK-NEXT:       ^
+
+func: () -> i32 {
+  ret x;
+}

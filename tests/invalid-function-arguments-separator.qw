@@ -1,0 +1,12 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a ',' to separate arguments or a closing parenthesis when parsing the arguments of a function call.
+// CHECK-NEXT:   extern_func(2 3);
+// CHECK-NEXT:                 ^
+
+extern_func: (x: i32, y: i32) -> void;
+
+func: () -> void {
+  extern_func(2 3);
+}

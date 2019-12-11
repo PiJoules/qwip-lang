@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected the name of the custom enum.
+// CHECK-NEXT: enum 2
+// CHECK-NEXT:      ^
+
+enum 2

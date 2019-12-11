@@ -1,0 +1,12 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+type A: {
+  x: i32;
+}
+
+// CHECK-NEXT: error: Expected the name of the member to access.
+
+func: (a: A) -> void {
+  a.
+}

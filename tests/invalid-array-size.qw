@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected the array size to be an integer literal.
+// CHECK-NEXT: arr: i32[i];
+// CHECK-NEXT:          ^
+
+arr: i32[i];

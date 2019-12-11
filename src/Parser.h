@@ -36,10 +36,10 @@ enum TypeKind {
 
 std::string NodeKindToString(NodeKind kind);
 
-constexpr unsigned kDefaultIntNumBits = 32;
-constexpr unsigned kDefaultEnumNumBits = 32;
-constexpr unsigned kNumCharBits = 8;
-constexpr unsigned kNumBitsPerByte = 8;
+static constexpr unsigned kDefaultIntNumBits = 32;
+static constexpr unsigned kDefaultEnumNumBits = 32;
+static constexpr unsigned kNumCharBits = 8;
+static constexpr unsigned kNumBitsPerByte = 8;
 
 class Type {
  public:
@@ -62,6 +62,11 @@ class Type {
   const T *maybeAs() const {
     if (getKind() != T::Kind) return nullptr;
     return static_cast<const T *>(this);
+  }
+  template <typename T>
+  T *maybeAs() {
+    if (getKind() != T::Kind) return nullptr;
+    return static_cast<T *>(this);
   }
 
   virtual bool isEqual(const Type &other) const = 0;

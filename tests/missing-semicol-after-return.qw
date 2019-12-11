@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected a ';' to denote the end of a return statement.
+// CHECK-NEXT: }
+// CHECK-NEXT: ^
+
+func: () -> i32 {
+  ret 0
+}

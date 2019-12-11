@@ -1,0 +1,6 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected the array type to end with a ']'.
+
+arr: i32[2

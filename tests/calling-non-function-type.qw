@@ -1,0 +1,10 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: The expression being called must be a function type.
+// CHECK-NEXT:   x();
+// CHECK-NEXT:    ^
+
+func: (x: i32) -> void {
+  x();
+}

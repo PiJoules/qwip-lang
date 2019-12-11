@@ -1,0 +1,6 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected ':' after the name of the custom type.
+
+type T

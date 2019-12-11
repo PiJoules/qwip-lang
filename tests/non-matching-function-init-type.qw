@@ -1,0 +1,9 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected the definition to be attached to a function type.
+// CHECK-NEXT: func: i32 {
+// CHECK-NEXT: ^
+
+func: i32 {
+}

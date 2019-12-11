@@ -1,0 +1,8 @@
+// COMPILE: %qwip %src
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: error: Expected either a function argument (as an ID) or a closing parethesis when parsing a function definition.
+// CHECK-NEXT: func: (2) -> void;
+// CHECK-NEXT:        ^
+
+func: (2) -> void;
