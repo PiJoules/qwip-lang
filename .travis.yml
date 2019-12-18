@@ -51,7 +51,6 @@ script:
 - ninja
 - ninja test
 
-after_success:
 # Create lcov report
 - cd .. && cd build-coverage
 
@@ -62,7 +61,8 @@ after_success:
 - wget http://downloads.sourceforge.net/ltp/lcov-1.14.tar.gz
 - tar xvfz lcov-1.14.tar.gz
 
-- python ../collect-coverage.py --lcov-tool lcov-1.14/bin/lcov --gcov-tool gcov-8
+- python ../collect-coverage.py --lcov-tool lcov-1.14/bin/lcov --gcov-tool gcov-8 --fail-on-missing-coverage
 
+after_success:
 # Uploading report to CodeCov
 - bash <(curl -s https://codecov.io/bash) -f coverage.info || echo "Codecov did not collect coverage reports"

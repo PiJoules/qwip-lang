@@ -41,9 +41,13 @@ bool DummyHandlerSuccess(CommandLineParser<DummyArgs> &parser) {
   return true;
 }
 
-bool DummyHandlerFail(CommandLineParser<DummyArgs> &parser) {
+bool DummyPosHandlerFail(CommandLineParser<DummyArgs> &parser) {
   // Do nothing.
-  parser.Advance();
+  return false;
+}
+
+bool DummyOptHandlerFail(CommandLineParser<DummyArgs> &parser) {
+  // Do nothing.
   return false;
 }
 
@@ -76,7 +80,7 @@ TEST_CASE("Too few positional arguments", "[CommandLineParser]") {
 
 TEST_CASE("Positional handler fail", "[CommandLineParser]") {
   CommandLineParser<DummyArgs>::PositionalHandlers pos_handlers = {
-      &DummyHandlerFail,
+      &DummyPosHandlerFail,
   };
   CommandLineParser<DummyArgs> parser(pos_handlers, kEmptyOptHandlers);
   DummyArgs args;
@@ -96,7 +100,7 @@ TEST_CASE("Positional handler success", "[CommandLineParser]") {
 
 TEST_CASE("Optional handler fail", "[CommandLineParser]") {
   CommandLineParser<DummyArgs>::OptionalHandlers opt_handlers = {
-      {"-arg", &DummyHandlerFail},
+      {"-arg", &DummyOptHandlerFail},
   };
   CommandLineParser<DummyArgs> parser(kEmptyPosHandlers, opt_handlers);
   DummyArgs args;
@@ -107,7 +111,6 @@ TEST_CASE("Optional handler fail", "[CommandLineParser]") {
 TEST_CASE("Test getCurrentFlag()", "[CommandLineParser]") {
   auto check_flag = [](CommandLineParser<DummyArgs> &parser) {
     REQUIRE(strcmp(parser.getCurrentFlag(), "-arg") == 0);
-    parser.Advance();
     return true;
   };
   CommandLineParser<DummyArgs>::OptionalHandlers opt_handlers = {

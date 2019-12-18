@@ -1,0 +1,4 @@
+// COMPILE: %qwip %src -o
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: No output file provided.

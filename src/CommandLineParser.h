@@ -7,11 +7,10 @@
 #include <unordered_map>
 #include <vector>
 
-#define DEFINE_BOOL_FLAG(Name, Flag)                                \
-  bool Assign##Name(CommandLineParser<QwipFilecheckArgs> &parser) { \
-    parser.getArgs().Flag = true;                                   \
-    parser.Advance();                                               \
-    return true;                                                    \
+#define DEFINE_OPT_BOOL_FLAG(Args, Name, Flag)         \
+  bool Assign##Name(CommandLineParser<Args> &parser) { \
+    parser.getArgs().Flag = true;                      \
+    return true;                                       \
   }
 
 namespace qwip {
@@ -67,6 +66,9 @@ class CommandLineParser {
       }
 
       // Found an optional flag. Call its handler.
+      // The first argument an optional flag should see is what's passed as it's
+      // argument.
+      Advance();
       if (!((found_callback->second)(*this))) return false;
     }
 
@@ -88,8 +90,16 @@ class CommandLineParser {
   const char **getArgv() const { return argv_; }
 
   void Advance(unsigned i = 1) {
-    assert(!DidReadAllArgs() && "Already reached end of arguments");
+    assert(!DidReadAllArgs() &&
+           "Already reached end of arguments. Be sure to check "
+           "DidReadAllArgs() before calling Advance().");
     current_arg_ += i;
+  }
+
+  const char *getCurrentArgAndAdvance() {
+    const char *arg = getCurrentArg();
+    Advance();
+    return arg;
   }
 
  private:

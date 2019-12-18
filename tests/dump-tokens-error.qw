@@ -1,0 +1,14 @@
+// COMPILE: %qwip %src --dump-tokens
+// EXPECT-COMPILE-ERROR
+
+// CHECK-NEXT: <TOK_ID chars='x'
+// CHECK-NEXT: <TOK_COL chars=':'
+// CHECK-NEXT: <TOK_ID chars='i32'
+// CHECK-NEXT: <TOK_SEMICOL chars=';'
+// CHECK-NEXT: error: Unable to lex character '`'.
+// CHECK-NEXT: `
+// CHECK-NEXT: ^
+
+x: i32;
+
+`

@@ -31,50 +31,24 @@ struct QwipArgs {
   bool FoundInputFile() const { return !input_file.empty(); }
 };
 
-bool AssignDumpTokens(CommandLineParser<QwipArgs> &parser) {
-  auto &args = parser.getArgs();
-  parser.Advance();
-  args.dump_tokens = true;
-  return true;
-}
-
-bool AssignDumpLLVM(CommandLineParser<QwipArgs> &parser) {
-  auto &args = parser.getArgs();
-  parser.Advance();
-  args.dump_llvm = true;
-  return true;
-}
-
-bool AssignLexComments(CommandLineParser<QwipArgs> &parser) {
-  auto &args = parser.getArgs();
-  parser.Advance();
-  args.lex_comments = true;
-  return true;
-}
+DEFINE_OPT_BOOL_FLAG(QwipArgs, DumpTokens, dump_tokens)
+DEFINE_OPT_BOOL_FLAG(QwipArgs, DumpLLVM, dump_llvm)
+DEFINE_OPT_BOOL_FLAG(QwipArgs, LexComments, lex_comments)
 
 bool AssignOutputFile(CommandLineParser<QwipArgs> &parser) {
   auto &args = parser.getArgs();
-  parser.Advance();
   if (parser.DidReadAllArgs()) {
-    std::cerr << "No argument provided for " << parser.getCurrentFlag() << "\n";
+    std::cerr << "No output file provided.\n";
     return false;
   }
-  args.output_file = parser.getCurrentArg();
-  parser.Advance();
+  args.output_file = parser.getCurrentArgAndAdvance();
   return true;
 }
 
 bool AssignInputFile(CommandLineParser<QwipArgs> &parser) {
   auto &args = parser.getArgs();
-  if (args.FoundInputFile()) {
-    std::cerr << "Already found " << args.input_file
-              << " as an input, but also found " << parser.getCurrentArg()
-              << " as an input. Only one input can be passed at a time.\n";
-    return false;
-  }
-
-  args.input_file = parser.getCurrentArg();
-  parser.Advance();
+  assert(!args.FoundInputFile() && "Already found an input file.");
+  args.input_file = parser.getCurrentArgAndAdvance();
   return true;
 }
 
@@ -92,10 +66,7 @@ const CommandLineParser<QwipArgs>::PositionalHandlers kQwipPosHandlers = {
 bool DumpTokens(Lexer &lexer) {
   Token tok;
   do {
-    if (!lexer.Lex(tok)) {
-      std::cerr << "Lexer error\n";
-      return false;
-    }
+    if (!lexer.Lex(tok)) return false;
     std::cerr << tok.toString() << "\n";
   } while (tok.kind != TOK_EOF);
   return true;
@@ -129,8 +100,13 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  if (!compiler.SaveToExecutable(cmd_args.input_file, cmd_args.output_file))
-    return 1;
+  if (!compiler.SaveToExecutable(cmd_args.input_file, cmd_args.output_file)) {
+    // This line is excluded because there are a few ways that a failure can be
+    // reached here and they can't easily be tested, so we just skip this branch
+    // for now since the function should gracefully handle the error and spit
+    // some message.
+    return 1;  // LCOV_EXCL_LINE
+  }
 
   return 0;
 }
