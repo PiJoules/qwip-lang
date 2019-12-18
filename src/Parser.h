@@ -13,6 +13,9 @@
 #define DECLARE_TYPEKIND_MEMBERS \
   static TypeKind Kind;          \
   TypeKind getKind() const override { return Kind; }
+#define DECLARE_NODE_MEMBERS \
+  static NodeKind Kind;      \
+  NodeKind getKind() const override { return Kind; }
 
 namespace qwip {
 
@@ -93,7 +96,7 @@ class FuncType : public Type {
 
     if (!arg_types_.empty()) arg_types_.front()->Dump(out);
 
-    for (unsigned i = 2; i <= arg_types_.size(); ++i) {
+    for (unsigned i = 1; i < arg_types_.size(); ++i) {
       out << ", ";
       arg_types_[i]->Dump(out);
     }
@@ -156,14 +159,12 @@ class StructType : public Type {
     return std::unique_ptr<StructType>(new StructType(types, idxs_));
   }
 
-  // TODO: Print out the name ones it is a part of the struct unstead of the
-  // individual members.
   void Dump(std::ostream &out) const override {
     out << "{";
 
     if (!types_.empty()) types_.front()->Dump(out);
 
-    for (unsigned i = 2; i <= types_.size(); ++i) {
+    for (unsigned i = 1; i < types_.size(); ++i) {
       out << ", ";
       types_[i]->Dump(out);
     }
@@ -268,7 +269,7 @@ class EnumType : public Type {
 
     if (!values_.empty()) out << values_.front();
 
-    for (unsigned i = 2; i <= values_.size(); ++i) {
+    for (unsigned i = 1; i < values_.size(); ++i) {
       out << ", ";
       out << values_[i];
     }
@@ -365,7 +366,7 @@ class ArrayType : public Type {
 
 class Node {
  public:
-  Node(const SourceLocation loc) : loc_(loc) {}
+  Node(const SourceLocation &loc) : loc_(loc) {}
   virtual ~Node() {}
   virtual NodeKind getKind() const = 0;
   const SourceLocation getLoc() const { return loc_; }
@@ -381,18 +382,18 @@ class Node {
 
 class ExternDecl : public Node {
  public:
-  ExternDecl(const SourceLocation loc) : Node(loc) {}
+  ExternDecl(const SourceLocation &loc) : Node(loc) {}
 };
 
 class Module : public Node {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   Module(const SourceLocation &loc,
          std::vector<std::unique_ptr<ExternDecl>> &decls)
       : Node(loc), decls_(std::move(decls)) {
     assert_ptr_vector(decls_);
   }
 
-  NodeKind getKind() const override { return NODE_MODULE; }
   const std::vector<std::unique_ptr<ExternDecl>> &getDecls() const {
     return decls_;
   }
@@ -403,18 +404,25 @@ class Module : public Node {
 
 class Expr : public Node {
  public:
-  Expr(const SourceLocation loc) : Node(loc) {}
+  Expr(const SourceLocation &loc) : Node(loc) {}
   virtual std::unique_ptr<Type> getType() const = 0;
 };
 
 class Call : public Expr {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   Call(std::unique_ptr<Expr> &caller, std::vector<std::unique_ptr<Expr>> &args)
       : Expr(caller->getLoc()),
         caller_(std::move(caller)),
-        args_(std::move(args)) {}
+        args_(std::move(args)) {
+    assert_ptr(caller_);
+    assert_ptr_vector(args_);
+  }
+  Call(std::unique_ptr<Expr> &caller)
+      : Expr(caller->getLoc()), caller_(std::move(caller)) {
+    assert_ptr(caller_);
+  }
 
-  NodeKind getKind() const override { return NODE_CALL; }
   const Expr &getCaller() const { return *caller_; }
   const std::vector<std::unique_ptr<Expr>> &getArgs() const { return args_; }
 
@@ -432,10 +440,10 @@ class Call : public Expr {
 
 class Str : public Expr {
  public:
-  Str(const SourceLocation loc, const std::string &str)
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  Str(const SourceLocation &loc, const std::string &str)
       : Expr(loc), val_(str) {}
 
-  NodeKind getKind() const override { return NODE_STR; }
   const std::string &getVal() const { return val_; }
   std::unique_ptr<Type> getType() const override {
     return std::make_unique<StrType>(val_.size() + 1);
@@ -448,7 +456,8 @@ class Str : public Expr {
 // All ints are signed by default for now.
 class Int : public Expr {
  public:
-  Int(const SourceLocation loc, int64_t val,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  Int(const SourceLocation &loc, int64_t val,
       unsigned num_bits = kDefaultIntNumBits)
       : Expr(loc), num_bits_(num_bits), val_(val) {
     if (num_bits == 1) {
@@ -467,7 +476,6 @@ class Int : public Expr {
 
   static std::unique_ptr<Int> fromToken(const Token &tok);
 
-  NodeKind getKind() const override { return NODE_INT; }
   std::unique_ptr<Type> getType() const override {
     return std::make_unique<IntType>(num_bits_);
   }
@@ -482,12 +490,13 @@ class Int : public Expr {
 
 class Bool : public Int {
  public:
-  Bool(const SourceLocation loc, bool b) : Int(loc, b, /*num_bits=*/1) {}
-  NodeKind getKind() const override { return NODE_BOOL; }
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  Bool(const SourceLocation &loc, bool b) : Int(loc, b, /*num_bits=*/1) {}
 };
 
 class EnumLiteral : public Expr {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   EnumLiteral(SourceLocation loc, const std::string &name, size_t val,
               std::unique_ptr<Type> &enum_type)
       : Expr(loc), name_(name), val_(val), type_(std::move(enum_type)) {
@@ -498,7 +507,6 @@ class EnumLiteral : public Expr {
       : Expr(loc), name_(name), val_(val), type_(enum_type.Clone()) {
     Initialize();
   }
-  NodeKind getKind() const override { return NODE_ENUM_LITERAL; }
   std::unique_ptr<Type> getType() const override { return type_->Clone(); }
   const EnumType &ViewType() const { return type_->getAs<EnumType>(); }
   size_t getVal() const { return val_; }
@@ -520,7 +528,8 @@ class EnumLiteral : public Expr {
 
 class Array : public Expr {
  public:
-  Array(const SourceLocation loc, std::vector<std::unique_ptr<Expr>> &vals)
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  Array(const SourceLocation &loc, std::vector<std::unique_ptr<Expr>> &vals)
       : Expr(loc), vals_(std::move(vals)) {
     assert(!vals_.empty() && "Cannot create an empty array.");
     assert_ptr_vector(vals_);
@@ -532,7 +541,6 @@ class Array : public Expr {
     }
   }
 
-  NodeKind getKind() const override { return NODE_ARRAY; }
   std::unique_ptr<Type> getType() const override {
     std::unique_ptr<Type> elem_type = vals_.front()->getType();
     std::unique_ptr<Type> type(new ArrayType(elem_type, vals_.size()));
@@ -546,16 +554,16 @@ class Array : public Expr {
 
 class ID : public Expr {
  public:
-  ID(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  ID(const SourceLocation &loc, const std::string &name,
      std::unique_ptr<Type> &type)
       : Expr(loc), name_(name), type_(std::move(type)) {
     assert_ptr(type_);
   }
-  ID(const SourceLocation loc, const std::string &name, const Type &type)
+  ID(const SourceLocation &loc, const std::string &name, const Type &type)
       : Expr(loc), name_(name), type_(type.Clone()) {
     assert_ptr(type_);
   }
-  NodeKind getKind() const override { return NODE_ID; }
   std::unique_ptr<Type> getType() const override { return type_->Clone(); }
 
   const std::string &getName() const { return name_; }
@@ -567,15 +575,20 @@ class ID : public Expr {
 };
 
 enum BinOpCode {
-  BINOP_LT,
+  BINOP_LT = 0,
   BINOP_LE,
   BINOP_EQ,
   BINOP_ADD,
   BINOP_SUB,
 };
 
+constexpr unsigned FirstComparisonOp = BINOP_LT;
+constexpr unsigned LastComparisonOp = BINOP_EQ;
+static_assert(FirstComparisonOp <= LastComparisonOp);
+
 class BinOp : public Expr {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   BinOp(std::unique_ptr<Expr> &lhs, std::unique_ptr<Expr> &rhs, BinOpCode op)
       : Expr(lhs->getLoc()),
         lhs_(std::move(lhs)),
@@ -585,7 +598,6 @@ class BinOp : public Expr {
     assert_ptr(rhs_);
   }
 
-  NodeKind getKind() const override { return NODE_BINOP; }
   const Expr &getLHS() const { return *lhs_; }
   const Expr &getRHS() const { return *rhs_; }
   BinOpCode getBinOp() const { return op_; }
@@ -600,7 +612,7 @@ class BinOp : public Expr {
         // TODO: The result type should depend on the types of both operands.
         return lhs_->getType();
     }
-    UNREACHABLE("Unhandled BinOpCode");
+    UNREACHABLE("Unhandled BinOpCode");  // LCOV_EXCL_LINE
     return nullptr;
   }
 
@@ -612,6 +624,7 @@ class BinOp : public Expr {
 
 class MemberAccess : public Expr {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   MemberAccess(std::unique_ptr<Expr> &base, const std::string &member)
       : Expr(base->getLoc()), base_(std::move(base)), member_(member) {
     assert_ptr(base_);
@@ -619,7 +632,6 @@ class MemberAccess : public Expr {
            "The base should be a struct type.");
   }
 
-  NodeKind getKind() const override { return NODE_MEMBER_ACCESS; }
   const Expr &getBase() const { return *base_; }
   const std::string &getMember() const { return member_; }
   std::unique_ptr<Type> getType() const override {
@@ -634,6 +646,8 @@ class MemberAccess : public Expr {
 
 class Subscript : public Expr {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
   Subscript(std::unique_ptr<Expr> &base, std::unique_ptr<Expr> &idx)
       : Expr(base->getLoc()), base_(std::move(base)), idx_(std::move(idx)) {
     assert_ptr(base_);
@@ -643,7 +657,6 @@ class Subscript : public Expr {
            "THe base should be an array type.");
   }
 
-  NodeKind getKind() const override { return NODE_SUBSCRIPT; }
   const Expr &getBase() const { return *base_; }
   const Expr &getIndex() const { return *idx_; }
   std::unique_ptr<Type> getType() const override {
@@ -662,17 +675,17 @@ class Subscript : public Expr {
  */
 class TypeNode : public Node {
  public:
-  TypeNode(const SourceLocation loc) : Node(loc) {}
+  TypeNode(const SourceLocation &loc) : Node(loc) {}
   virtual std::unique_ptr<Type> toType() const = 0;
 };
 
 class PtrTypeNode : public TypeNode {
  public:
-  PtrTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &type)
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  PtrTypeNode(const SourceLocation &loc, std::unique_ptr<TypeNode> &type)
       : TypeNode(loc), pointee_type_(std::move(type)) {
     assert_ptr(pointee_type_);
   }
-  NodeKind getKind() const override { return NODE_PTR_TYPE; }
 
   const TypeNode &getPointeeTypeNode() const { return *pointee_type_; }
   std::unique_ptr<Type> toType() const override {
@@ -687,12 +700,12 @@ class PtrTypeNode : public TypeNode {
 
 class ArrayTypeNode : public TypeNode {
  public:
-  ArrayTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &type,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  ArrayTypeNode(const SourceLocation &loc, std::unique_ptr<TypeNode> &type,
                 unsigned size)
       : TypeNode(loc), element_type_(std::move(type)), size_(size) {
     assert_ptr(element_type_);
   }
-  NodeKind getKind() const override { return NODE_ARRAY_TYPE; }
 
   const TypeNode &getElementType() const { return *element_type_; }
   std::unique_ptr<Type> toType() const override {
@@ -708,7 +721,8 @@ class ArrayTypeNode : public TypeNode {
 
 class IDTypeNode : public TypeNode {
  public:
-  IDTypeNode(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  IDTypeNode(const SourceLocation &loc, const std::string &name,
              std::unique_ptr<Type> &underlying_type)
       : TypeNode(loc),
         name_(name),
@@ -716,7 +730,6 @@ class IDTypeNode : public TypeNode {
     assert_ptr(underlying_type_);
   }
 
-  NodeKind getKind() const override { return NODE_ID_TYPE; }
   const std::string &getName() const { return name_; }
   std::unique_ptr<Type> toType() const override {
     // return std::unique_ptr<Type>(new IDType(name_));
@@ -731,21 +744,22 @@ class IDTypeNode : public TypeNode {
 
 class Stmt : public Node {
  public:
-  Stmt(const SourceLocation loc) : Node(loc) {}
+  Stmt(const SourceLocation &loc) : Node(loc) {}
 };
 
 class VarDecl : public Stmt {
  public:
-  VarDecl(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
+  VarDecl(const SourceLocation &loc, const std::string &name,
           std::unique_ptr<TypeNode> &type)
       : Stmt(loc), name_(name), type_(std::move(type)) {
     assert_ptr(type_);
   }
-  VarDecl(const SourceLocation loc, const std::string &name, TypeNode *type)
+  VarDecl(const SourceLocation &loc, const std::string &name, TypeNode *type)
       : Stmt(loc), name_(name), type_(type) {
     assert_ptr(type_);
   }
-  NodeKind getKind() const override { return NODE_VARDECL; }
 
   const std::string &getName() const { return name_; }
   const TypeNode &getTypeNode() const { return *type_; }
@@ -758,6 +772,8 @@ class VarDecl : public Stmt {
 
 class VarDef : public Stmt {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
   VarDef(std::unique_ptr<VarDecl> &decl, std::unique_ptr<Expr> &init)
       : Stmt(decl->getLoc()), decl_(std::move(decl)), init_(std::move(init)) {
     assert_ptr(decl_);
@@ -770,8 +786,6 @@ class VarDef : public Stmt {
            "to be the same");
   }
 
-  NodeKind getKind() const override { return NODE_VARDEF; }
-
   const VarDecl &getDecl() const { return *decl_; }
   const Expr &getInit() const { return *init_; }
 
@@ -782,18 +796,18 @@ class VarDef : public Stmt {
 
 class MemberDecl : public Node {
  public:
-  MemberDecl(const SourceLocation loc) : Node(loc) {}
+  MemberDecl(const SourceLocation &loc) : Node(loc) {}
 };
 
 class TypeDef : public Stmt {
  public:
-  TypeDef(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  TypeDef(const SourceLocation &loc, const std::string &name,
           std::vector<std::unique_ptr<MemberDecl>> &members)
       : Stmt(loc), name_(name), members_(std::move(members)) {
     assert_ptr_vector(members_);
   }
 
-  NodeKind getKind() const override { return NODE_TYPEDEF; }
   const std::string &getName() const { return name_; }
   const std::vector<std::unique_ptr<MemberDecl>> &getMembers() const {
     return members_;
@@ -808,11 +822,19 @@ class TypeDef : public Stmt {
 
 class EnumDef : public Stmt {
  public:
-  EnumDef(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
+  EnumDef(const SourceLocation &loc, const std::string &name,
           const std::vector<std::string> &values,
           unsigned num_bits = kDefaultEnumNumBits)
       : Stmt(loc), name_(name), values_(values), num_bits_(num_bits) {}
-  NodeKind getKind() const override { return NODE_ENUMDEF; }
+  EnumDef(const SourceLocation &loc, const std::string &name,
+          const std::initializer_list<std::string> &values,
+          unsigned num_bits = kDefaultEnumNumBits)
+      : Stmt(loc),
+        name_(name),
+        values_(values.begin(), values.end()),
+        num_bits_(num_bits) {}
   const std::string &getName() const { return name_; }
   const std::vector<std::string> &getValues() const { return values_; }
   EnumType getEnumType() const;
@@ -826,12 +848,12 @@ class EnumDef : public Stmt {
 
 class Param : public Node {
  public:
-  Param(const SourceLocation loc, const std::string &name,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  Param(const SourceLocation &loc, const std::string &name,
         std::unique_ptr<TypeNode> &type)
       : Node(loc), name_(name), type_(std::move(type)) {
     assert_ptr(type_);
   }
-  NodeKind getKind() const override { return NODE_PARAM; }
 
   const std::string &getName() const { return name_; }
   const TypeNode &getTypeNode() const { return *type_; }
@@ -846,7 +868,8 @@ class Param : public Node {
  */
 class FuncTypeNode : public TypeNode {
  public:
-  FuncTypeNode(const SourceLocation loc, std::unique_ptr<TypeNode> &ret_type,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  FuncTypeNode(const SourceLocation &loc, std::unique_ptr<TypeNode> &ret_type,
                std::vector<std::unique_ptr<Param>> &params, bool isvararg)
       : TypeNode(loc),
         ret_type_(std::move(ret_type)),
@@ -862,7 +885,6 @@ class FuncTypeNode : public TypeNode {
   }
   bool isVarArg() const { return isvararg_; }
 
-  NodeKind getKind() const override { return NODE_FUNC_TYPE; }
   std::unique_ptr<Type> toType() const override {
     auto ret_type = ret_type_->toType();
     std::vector<std::unique_ptr<Type>> arg_types;
@@ -884,13 +906,13 @@ class FuncTypeNode : public TypeNode {
  */
 class Assign : public Stmt {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   Assign(std::unique_ptr<Expr> &lhs, std::unique_ptr<Expr> &expr)
       : Stmt(lhs->getLoc()), lhs_(std::move(lhs)), expr_(std::move(expr)) {
     assert_ptr(lhs_);
     assert_ptr(expr_);
   }
 
-  NodeKind getKind() const override { return NODE_ASSIGN; }
   const Expr &getLHS() const { return *lhs_; }
   const Expr &getExpr() const { return *expr_; }
 
@@ -901,12 +923,12 @@ class Assign : public Stmt {
 
 class CallStmt : public Stmt {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
   CallStmt(std::unique_ptr<Call> &call)
       : Stmt(call->getLoc()), call_(std::move(call)) {
     assert_ptr(call_);
   }
 
-  NodeKind getKind() const override { return NODE_CALLSTMT; }
   const Call &getCall() const { return *call_; }
 
  private:
@@ -915,13 +937,14 @@ class CallStmt : public Stmt {
 
 class If : public Stmt {
  public:
-  If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  If(const SourceLocation &loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body)
       : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
     assert_ptr(cond_);
     assert_ptr_vector(body_);
   }
-  If(const SourceLocation loc, std::unique_ptr<Expr> &cond,
+  If(const SourceLocation &loc, std::unique_ptr<Expr> &cond,
      std::vector<std::unique_ptr<Stmt>> &body,
      std::vector<std::unique_ptr<Stmt>> &else_body)
       : Stmt(loc),
@@ -932,7 +955,6 @@ class If : public Stmt {
     assert_ptr_vector(body_);
     assert_ptr_vector(else_body_);
   }
-  NodeKind getKind() const override { return NODE_IF; }
 
   const Expr &getCond() const { return *cond_; }
   const std::vector<std::unique_ptr<Stmt>> &getBody() const { return body_; }
@@ -949,14 +971,13 @@ class If : public Stmt {
 
 class While : public Stmt {
  public:
-  While(const SourceLocation loc, std::unique_ptr<Expr> &cond,
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+  While(const SourceLocation &loc, std::unique_ptr<Expr> &cond,
         std::vector<std::unique_ptr<Stmt>> &body)
       : Stmt(loc), cond_(std::move(cond)), body_(std::move(body)) {
     assert_ptr(cond_);
     assert_ptr_vector(body_);
   }
-
-  NodeKind getKind() const override { return NODE_WHILE; }
 
   const Expr &getCond() const { return *cond_; }
   const std::vector<std::unique_ptr<Stmt>> &getBody() const { return body_; }
@@ -968,6 +989,8 @@ class While : public Stmt {
 
 class FuncDef : public Stmt {
  public:
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
   FuncDef(std::unique_ptr<VarDecl> &decl,
           std::vector<std::unique_ptr<Stmt>> &stmts)
       : Stmt(decl->getLoc()), decl_(std::move(decl)), stmts_(std::move(stmts)) {
@@ -976,7 +999,6 @@ class FuncDef : public Stmt {
     assert(decl_->getTypeNode().getKind() == NODE_FUNC_TYPE &&
            "A FuncDef node can only accept a VarDecl that is a function type.");
   }
-  NodeKind getKind() const override { return NODE_FUNCDEF; }
   const VarDecl &getDecl() const { return *decl_; }
   const std::vector<std::unique_ptr<Stmt>> &getStmts() const { return stmts_; }
 
@@ -987,11 +1009,12 @@ class FuncDef : public Stmt {
 
 class Return : public Stmt {
  public:
-  Return(const SourceLocation loc, std::unique_ptr<Expr> &expr)
+  DECLARE_NODE_MEMBERS;  // LCOV_EXCL_LINE
+
+  Return(const SourceLocation &loc, std::unique_ptr<Expr> &expr)
       : Stmt(loc), expr_(std::move(expr)) {
     assert_ptr(expr_);
   }
-  NodeKind getKind() const override { return NODE_RET; }
 
   const Expr &getExpr() const { return *expr_; }
 
@@ -1004,11 +1027,11 @@ class Return : public Stmt {
 #define DEFINE_WRAPPER_NODE(Class, Kind, Parent, InnerClass)      \
   class Class : public Parent {                                   \
    public:                                                        \
+    DECLARE_NODE_MEMBERS;                                         \
     Class(std::unique_ptr<InnerClass> &inner)                     \
         : Parent(inner->getLoc()), inner_(std::move(inner)) {     \
       assert_ptr(inner_);                                         \
     }                                                             \
-    NodeKind getKind() const override { return Kind; }            \
     const InnerClass &get##InnerClass() const { return *inner_; } \
                                                                   \
    private:                                                       \
@@ -1112,9 +1135,9 @@ class Context {
 
     if (type_name[0] != 'i') return false;
 
-    if (std::any_of(type_name.begin() + 1, type_name.end(),
-                    [](char c) { return !isdigit(c); }))
-      return false;
+    // TODO: Return false on this case instead of asserting it.
+    assert(std::all_of(type_name.begin() + 1, type_name.end(),
+                       [](char c) { return isdigit(c); }));
 
     std::string sub_str(type_name.begin() + 1, type_name.end());
     i = static_cast<unsigned>(std::stoul(sub_str));

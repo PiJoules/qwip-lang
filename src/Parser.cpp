@@ -1123,7 +1123,10 @@ bool ArrayType::isEqual(const Type &other) const {
 
 std::unordered_map<std::string, std::unique_ptr<Type>> Context::cached_types_;
 
-#define TYPE(EnumKind, Class) TypeKind Class::Kind = EnumKind;
+#define TYPE(KIND, CLASS) TypeKind CLASS::Kind = KIND;
 #include "Types.def"
+
+#define NODE(KIND, CLASS) NodeKind CLASS::Kind = KIND;
+#include "Nodes.def"
 
 }  // namespace qwip

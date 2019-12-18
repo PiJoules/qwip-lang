@@ -15,7 +15,8 @@ main: () -> i32 {
   printf("%d\n", ints[3]);
 
   ints[2] = 5;
+  ints[3] = ints[2];
   // CHECK-NEXT: 5
-  printf("%d\n", ints[2]);
+  printf("%d\n", ints[3]);
   ret 0;
 }

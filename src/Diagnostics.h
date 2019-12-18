@@ -24,6 +24,9 @@ struct SourceLocation {
     return os.str();
   }
 };
+static_assert(sizeof(SourceLocation) > sizeof(char *),
+              "We pass SourceLocations by reference since they are larger than "
+              "pointers.");
 
 /**
  * // Create once with any configuration.
